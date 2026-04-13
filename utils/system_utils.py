@@ -67,24 +67,26 @@ class SystemUtils:
         """
         查找 adb 可执行文件路径。
         搜索顺序：
-            1. manual_path（用户指定的路径）
-            2. 环境变量 PATH 中的 adb
-            3. 常见安装路径（macOS: ~/Library/Android/sdk/platform-tools, 
-               Windows: %LOCALAPPDATA%/Android/Sdk/platform-tools,
-               Linux: ~/Android/Sdk/platform-tools）
-            4. 当前目录下的 scrcpy/adb
-        返回绝对路径字符串，如果未找到则返回 None。
+            1. manual_path（用户指定的路径，如果有效）
+            2. 当前项目目录下的 ./scrcpy/adb
+            3. 环境变量 PATH 中的 adb
+            4. 常见安装路径
         """
-        # 1. 手动指定路径
+        # 1. 手动指定路径（最高优先级）
         if manual_path and Path(manual_path).exists():
             return str(Path(manual_path).resolve())
 
-        # 2. 查找系统 PATH
+        # 2. 项目内 ./scrcpy/adb（新增优先级）
+        local_adb = Path.cwd() / "scrcpy" / ("adb.exe" if SystemUtils.is_windows() else "adb")
+        if local_adb.exists():
+            return str(local_adb.resolve())
+
+        # 3. 系统 PATH
         adb_path = shutil.which('adb')
         if adb_path:
             return adb_path
 
-        # 3. 常见 SDK 路径
+        # 4. 常见 SDK 路径
         home = Path.home()
         common_paths = []
         if SystemUtils.is_mac():
@@ -107,11 +109,6 @@ class SystemUtils:
         for p in common_paths:
             if p.exists():
                 return str(p.resolve())
-
-        # 4. 当前目录下的 ./scrcpy/adb
-        local_adb = Path.cwd() / "scrcpy" / ("adb.exe" if SystemUtils.is_windows() else "adb")
-        if local_adb.exists():
-            return str(local_adb.resolve())
 
         return None
 

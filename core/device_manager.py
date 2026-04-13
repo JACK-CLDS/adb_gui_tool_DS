@@ -16,7 +16,6 @@ from typing import Dict, List, Optional, Any
 from core.adb_client import AdbClient
 from utils.config_manager import ConfigManager
 
-
 class DeviceManager(QObject):
     """设备管理器，负责获取设备列表并管理设备窗口"""
 
