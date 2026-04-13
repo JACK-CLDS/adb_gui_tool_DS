@@ -33,6 +33,7 @@ class DeviceWindow(QMainWindow):
     """单个设备的控制窗口"""
 
     # 窗口关闭时发出信号，供 DeviceManager 清理引用
+    status_message = pyqtSignal(str)
     closed = pyqtSignal(str)
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
@@ -47,6 +48,7 @@ class DeviceWindow(QMainWindow):
         self.init_ui()
         self.init_toolbar()
         self.init_statusbar()
+        self.status_message.connect(self.show_status_message)
         self.load_device_info()  # 异步加载设备信息
 
     def init_ui(self):
@@ -63,12 +65,12 @@ class DeviceWindow(QMainWindow):
         self.info_tab = self.create_info_tab()
         self.tab_widget.addTab(self.info_tab, "设备信息")
 
-        # 应用管理选项卡（占位）
+        # 应用管理选项卡
         self.apps_tab = self.create_apps_tab()
         self.tab_widget.addTab(self.apps_tab, "应用管理")
 
-        # 文件管理选项卡（占位）
-        self.file_tab = self.create_placeholder_tab("文件管理\n(待实现)")
+        # 文件管理选项卡
+        self.file_tab = self.create_file_manager_tab()
         self.tab_widget.addTab(self.file_tab, "文件管理")
 
         # 日志查看选项卡（占位）
@@ -126,6 +128,10 @@ class DeviceWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         self.status_label = QLabel("就绪")
         self.status_bar.addWidget(self.status_label)
+
+    def show_status_message(self, msg: str):
+        """显示状态栏消息"""
+        self.status_label.setText(msg)
 
     def create_info_tab(self) -> QWidget:
         """创建设备信息选项卡（显示基本信息和详细信息）"""
@@ -298,3 +304,9 @@ class DeviceWindow(QMainWindow):
         """创建应用管理选项卡"""
         from ui.apps_tab import AppsTab
         return AppsTab(self.serial, self.adb_client)
+
+    def create_file_manager_tab(self) -> QWidget:
+        from ui.file_manager import FileManager
+        return FileManager(self.serial, self.adb_client, parent=self)
+
+

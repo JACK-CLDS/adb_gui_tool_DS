@@ -181,3 +181,9 @@ class AdbClient(QObject):
         """从设备拉取文件到本地"""
         args = ["pull", remote_path, local_path]
         self._exec(args, device_serial, callback=callback)
+
+    def push(self, local_path: str, remote_path: str, device_serial: Optional[str] = None,
+         callback: Optional[Callable[[int, str, str], None]] = None):
+        """推送本地文件到设备"""
+        args = ["push", local_path, remote_path]
+        self._exec(args, device_serial, callback=callback)
