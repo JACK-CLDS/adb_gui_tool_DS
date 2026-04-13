@@ -47,6 +47,18 @@ class DeviceWindow(QMainWindow):
 
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
+        #uni style
+#        self.tab_widget.setDocumentMode(True)
+#        self.tab_widget.setStyleSheet("""
+#            QTabBar::tab {
+#                padding: 6px 12px;
+#                margin: 2px;
+#            }
+#            QTabBar::tab:selected {
+#                background: palette(highlight);
+#                color: palette(highlighted-text);
+#            }
+#        """)
 
         self.info_tab = self.create_info_tab()
         self.tab_widget.addTab(self.info_tab, "设备信息")
@@ -163,13 +175,13 @@ class DeviceWindow(QMainWindow):
         
         # 定义任务列表：每个任务包含 (描述, 获取函数, 更新UI的lambda)
         tasks = [
-            ("设备型号", lambda: self.adb_client.shell_sync("getprop ro.product.model", self.serial),
+            ("设备型号", lambda: self.adb_client.shell_sync("getprop ro.product.model", self.serial, timeout=2),
              lambda val: self.model_label.setText(val.strip() or "未知")),
-            ("Android版本", lambda: self.adb_client.shell_sync("getprop ro.build.version.release", self.serial),
+            ("Android版本", lambda: self.adb_client.shell_sync("getprop ro.build.version.release", self.serial, timeout=2),
              lambda val: self.android_version_label.setText(val.strip() or "未知")),
-            ("电池信息", lambda: self.adb_client.shell_sync("dumpsys battery", self.serial),
+            ("电池信息", lambda: self.adb_client.shell_sync("dumpsys battery", self.serial, timeout=5),
              lambda out: self._parse_battery(out)),
-            ("屏幕分辨率", lambda: self.adb_client.shell_sync("wm size", self.serial),
+            ("屏幕分辨率", lambda: self.adb_client.shell_sync("wm size", self.serial, timeout=2),
              lambda out: self._parse_resolution(out)),
             ("IMEI", lambda: self._get_imei(),
              lambda val: self.imei_label.setText(val)),
@@ -189,7 +201,7 @@ class DeviceWindow(QMainWindow):
              lambda val: self.storage_label.setText(val)),
             ("显示屏详情", lambda: self._get_display_detail(),
              lambda val: self.display_detail_label.setText(val)),
-            ("详细属性", lambda: self.adb_client.shell_sync("getprop", self.serial),
+            ("详细属性", lambda: self.adb_client.shell_sync("getprop", self.serial, timeout=8),
              lambda out: self.detail_text.setText(out)),
         ]
         
