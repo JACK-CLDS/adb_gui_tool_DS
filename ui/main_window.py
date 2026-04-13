@@ -14,24 +14,22 @@ ui/main_window.py - 主启动窗口
 
 import sys
 from typing import List, Optional
+from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
     QLineEdit, QToolBar, QAction, QDockWidget, QTextEdit,
     QTreeWidget, QTreeWidgetItem, QMenu, QMessageBox, QInputDialog,
-    QAbstractItemView, QApplication
+    QAbstractItemView, QApplication, QDialog, QTextBrowser
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QSettings, QPoint
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QSettings, QPoint, QProcess
 from PyQt5.QtGui import QIcon, QKeySequence
 
 from core.adb_client import AdbClient
 from core.device_manager import DeviceManager
 from utils.config_manager import ConfigManager
 from utils.system_utils import SystemUtils
-# 后续引入设备窗口
-# from ui.device_window import DeviceWindow
-
 
 
 class MainWindow(QMainWindow):
@@ -54,7 +52,8 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """初始化用户界面"""
         self.setWindowTitle("ADB GUI Tool - 设备管理")
-        self.setMinimumSize(900, 600)
+        # 调整窗口宽度：原来是 900，增加 1/3 到 1200 (undo change)
+        self.setMinimumSize(800, 600)
         
         # 创建中央部件（包含设备表格和侧边栏）
         central_widget = QWidget()
@@ -99,7 +98,7 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(bottom_widget)
         
         splitter.addWidget(right_widget)
-        splitter.setSizes([200, 700])  # 左侧200px，右侧700px
+        splitter.setSizes([200, 600])  # 左侧250px，右侧950px（适应更宽窗口）(undo change)
         
         # 创建工具栏
         self.create_toolbar()
@@ -119,8 +118,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         
-        # 历史记录分组（可折叠，使用 QGroupBox 或自定义）
-        # 为了简单，使用 QTreeWidget 实现分组折叠效果
+        # 历史记录分组（可折叠，使用 QTreeWidget 实现分组折叠效果）
         self.history_tree = QTreeWidget()
         self.history_tree.setHeaderLabel("历史连接")
         self.history_tree.setIndentation(10)
@@ -204,186 +202,8 @@ class MainWindow(QMainWindow):
     
     def init_signals(self):
         """初始化信号连接（除了已连接的之外）"""
-        # 后续添加设备窗口打开等
         pass
-
-
-
-class MainWindow(QMainWindow):
-    """主启动窗口"""
-
-    def __init__(self, adb_client: AdbClient, parent=None):
-        super().__init__(parent)
-        self.adb_client = adb_client
-        self.device_manager = DeviceManager(adb_client, self)
-        self.device_manager.devices_updated.connect(self.update_device_table)
-        
-        # 存储当前打开的设备窗口列表（用于管理）
-        self.device_windows = []  # 每个元素为 (serial, window)
-        
-        self.init_ui()
-        self.init_signals()
-        self.load_settings()
-        self.device_manager.refresh_devices()  # 立即刷新一次
     
-    def init_ui(self):
-        """初始化用户界面"""
-        self.setWindowTitle("ADB GUI Tool - 设备管理")
-        self.setMinimumSize(900, 600)
-        
-        # 创建中央部件（包含设备表格和侧边栏）
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 创建水平分割器（左侧侧边栏，右侧设备表格）
-        splitter = QSplitter(Qt.Horizontal)
-        main_layout.addWidget(splitter)
-        
-        # 左侧侧边栏（可折叠的历史和收藏）
-        self.sidebar_widget = self.create_sidebar()
-        splitter.addWidget(self.sidebar_widget)
-        
-        # 右侧区域：设备表格 + 底部连接栏
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # 设备表格
-        self.device_table = QTableWidget()
-        self.device_table.setColumnCount(3)
-        self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
-        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # 支持多选
-        self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.device_table.doubleClicked.connect(self.on_device_double_clicked)
-        right_layout.addWidget(self.device_table)
-        
-        # 底部地址输入和连接按钮
-        bottom_widget = QWidget()
-        bottom_layout = QHBoxLayout(bottom_widget)
-        self.address_input = QLineEdit()
-        self.address_input.setPlaceholderText("输入 IP:端口 或 设备序列号，然后按回车连接")
-        self.address_input.returnPressed.connect(self.connect_to_address)
-        self.connect_btn = QPushButton("连接")
-        self.connect_btn.clicked.connect(self.connect_to_address)
-        bottom_layout.addWidget(self.address_input)
-        bottom_layout.addWidget(self.connect_btn)
-        right_layout.addWidget(bottom_widget)
-        
-        splitter.addWidget(right_widget)
-        splitter.setSizes([200, 700])  # 左侧200px，右侧700px
-        
-        # 创建工具栏
-        self.create_toolbar()
-        
-        # 创建程序日志停靠窗口
-        self.create_log_dock()
-        
-        # 应用样式表（可选，后期美化）
-        self.apply_stylesheet()
-    
-    def create_sidebar(self):
-        """创建左侧可折叠侧边栏（历史记录和收藏）"""
-        from PyQt5.QtWidgets import QFrame, QScrollArea
-        
-        sidebar = QWidget()
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-        
-        # 历史记录分组（可折叠，使用 QGroupBox 或自定义）
-        # 为了简单，使用 QTreeWidget 实现分组折叠效果
-        self.history_tree = QTreeWidget()
-        self.history_tree.setHeaderLabel("历史连接")
-        self.history_tree.setIndentation(10)
-        self.history_tree.setMaximumHeight(200)
-        self.history_tree.itemDoubleClicked.connect(self.on_history_item_clicked)
-        layout.addWidget(self.history_tree)
-        
-        # 收藏分组（支持多分组）
-        self.favorites_tree = QTreeWidget()
-        self.favorites_tree.setHeaderLabel("收藏设备")
-        self.favorites_tree.setIndentation(10)
-        self.favorites_tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.favorites_tree.customContextMenuRequested.connect(self.show_favorites_menu)
-        self.favorites_tree.itemDoubleClicked.connect(self.on_favorite_item_clicked)
-        layout.addWidget(self.favorites_tree)
-        
-        # 刷新侧边栏内容
-        self.refresh_history_tree()
-        self.refresh_favorites_tree()
-        
-        return sidebar
-    
-    def create_toolbar(self):
-        """创建顶部工具栏"""
-        toolbar = self.addToolBar("主要工具")
-        toolbar.setMovable(False)
-        
-        # 刷新按钮
-        refresh_action = QAction("刷新设备", self)
-        refresh_action.triggered.connect(self.device_manager.manual_refresh)
-        toolbar.addAction(refresh_action)
-        
-        # 重启 ADB 服务
-        restart_adb_action = QAction("重启 ADB", self)
-        restart_adb_action.triggered.connect(self.restart_adb_server)
-        toolbar.addAction(restart_adb_action)
-        
-        # Kill ADB 服务
-        kill_adb_action = QAction("Kill ADB", self)
-        kill_adb_action.triggered.connect(self.kill_adb_server)
-        toolbar.addAction(kill_adb_action)
-        
-        toolbar.addSeparator()
-        
-        # 全局设置
-        settings_action = QAction("全局设置", self)
-        settings_action.triggered.connect(self.open_settings_dialog)
-        toolbar.addAction(settings_action)
-        
-        # 关于
-        about_action = QAction("关于", self)
-        about_action.triggered.connect(self.open_about_dialog)
-        toolbar.addAction(about_action)
-    
-    def create_log_dock(self):
-        """创建可停靠的程序日志窗口"""
-        self.log_dock = QDockWidget("程序日志", self)
-        self.log_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_dock.setWidget(self.log_text)
-        self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
-        # 默认显示
-        self.log_dock.show()
-    
-    def apply_stylesheet(self):
-        """应用简单的样式表（可替换为 QSS 文件）"""
-        self.setStyleSheet("""
-            QTableWidget::item:selected {
-                background-color: #3498db;
-                color: white;
-            }
-            QTreeWidget::item:selected {
-                background-color: #3498db;
-                color: white;
-            }
-            QPushButton {
-                padding: 4px 8px;
-            }
-        """)
-    
-    def init_signals(self):
-        """初始化信号连接（除了已连接的之外）"""
-        # 后续添加设备窗口打开等
-        pass
-        
-        
-        
     def update_device_table(self, devices: List[tuple]):
         """
         更新设备表格
@@ -518,9 +338,7 @@ class MainWindow(QMainWindow):
         """从分组中移除单个设备"""
         ConfigManager.remove_favorite(group_name, device_addr)
         self.refresh_favorites_tree()
-        
-        
-        
+    
     def connect_to_address(self):
         """连接网络设备（或本地模拟器）"""
         addr = self.address_input.text().strip()
@@ -559,8 +377,6 @@ class MainWindow(QMainWindow):
             self.device_windows.clear()
         # 执行 adb kill-server 和 adb start-server
         self.log_message("正在重启 ADB 服务...")
-        # 使用 AdbClient 执行命令
-        from PyQt5.QtCore import QProcess
         proc = QProcess(self)
         proc.finished.connect(lambda code: self._after_adb_kill(code, proc))
         proc.start(self.adb_client.adb_path, ["kill-server"])
@@ -594,6 +410,8 @@ class MainWindow(QMainWindow):
             for serial, win in self.device_windows:
                 win.close()
             self.device_windows.clear()
+        # 注意：如果用户点击“否”，这里什么都不做，不应该退出程序
+        # 之前的错误是因为缺少 QProcess 导入，现在已修复
     
     def on_device_double_clicked(self, index):
         """双击设备行，打开该设备的控制窗口"""
@@ -631,15 +449,15 @@ class MainWindow(QMainWindow):
     
     def open_about_dialog(self):
         """打开关于对话框（显示系统信息、adb版本等）"""
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QTextBrowser
         dialog = QDialog(self)
         dialog.setWindowTitle("关于")
+        # 加宽 1/3：假设原来默认宽度约 450，现在设为 600
+        dialog.resize(450, 200)
         layout = QVBoxLayout(dialog)
         # 获取系统信息
         import platform
         sys_info = f"操作系统: {platform.system()} {platform.release()}\nPython版本: {sys.version.split()[0]}"
         # 获取 adb 版本
-        from utils.system_utils import SystemUtils
         ok, version = SystemUtils.check_adb_version(self.adb_client.adb_path)
         adb_info = f"ADB路径: {self.adb_client.adb_path}\nADB版本: {version if ok else '获取失败'}"
         text = f"{sys_info}\n\n{adb_info}"
@@ -653,7 +471,6 @@ class MainWindow(QMainWindow):
     
     def log_message(self, msg: str):
         """向程序日志窗口添加一条消息（带时间戳）"""
-        from datetime import datetime
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.append(f"[{timestamp}] {msg}")
         # 自动滚动到底部
@@ -665,7 +482,7 @@ class MainWindow(QMainWindow):
         settings = ConfigManager.get_settings()
         geometry = settings.get("window_geometry", {})
         if geometry:
-            self.resize(geometry.get("width", 900), geometry.get("height", 600))
+            self.resize(geometry.get("width", 800), geometry.get("height", 600))
             pos = QPoint(geometry.get("x", 100), geometry.get("y", 100))
             self.move(pos)
     
@@ -681,27 +498,3 @@ class MainWindow(QMainWindow):
         # 停止定时器
         self.device_manager.stop_refresh()
         event.accept()
-        
-        
-        
-# 如果直接运行此文件用于测试
-if __name__ == "__main__":
-    from PyQt5.QtWidgets import QApplication
-    from utils.system_utils import SystemUtils
-    from core.adb_client import AdbClient
-    
-    app = QApplication(sys.argv)
-    
-    # 查找 adb
-    adb_path = SystemUtils.find_adb()
-    if not adb_path:
-        QMessageBox.critical(None, "错误", "未找到 ADB，请在全局设置中指定路径。")
-        sys.exit(1)
-    
-    adb_client = AdbClient(adb_path)
-    window = MainWindow(adb_client)
-    window.show()
-    sys.exit(app.exec_())
-    
-    
-    

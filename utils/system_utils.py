@@ -72,7 +72,7 @@ class SystemUtils:
             3. 常见安装路径（macOS: ~/Library/Android/sdk/platform-tools, 
                Windows: %LOCALAPPDATA%/Android/Sdk/platform-tools,
                Linux: ~/Android/Sdk/platform-tools）
-            4. 当前目录下的 scrcpy/adb（用户提到的特殊路径）
+            4. 当前目录下的 scrcpy/adb
         返回绝对路径字符串，如果未找到则返回 None。
         """
         # 1. 手动指定路径
@@ -90,7 +90,7 @@ class SystemUtils:
         if SystemUtils.is_mac():
             common_paths = [
                 home / "Library/Android/sdk/platform-tools/adb",
-                "/usr/local/bin/adb"
+                Path("/usr/local/bin/adb")
             ]
         elif SystemUtils.is_windows():
             local_appdata = os.environ.get('LOCALAPPDATA', '')
@@ -101,14 +101,14 @@ class SystemUtils:
         elif SystemUtils.is_linux():
             common_paths = [
                 home / "Android/Sdk/platform-tools/adb",
-                "/usr/bin/adb"
+                Path("/usr/bin/adb")
             ]
 
         for p in common_paths:
             if p.exists():
                 return str(p.resolve())
 
-        # 4. 当前目录下的 ./scrcpy/adb（注意 Windows 下可能带 .exe）
+        # 4. 当前目录下的 ./scrcpy/adb
         local_adb = Path.cwd() / "scrcpy" / ("adb.exe" if SystemUtils.is_windows() else "adb")
         if local_adb.exists():
             return str(local_adb.resolve())
@@ -119,7 +119,7 @@ class SystemUtils:
     def find_scrcpy(manual_path: Optional[str] = None) -> Optional[str]:
         """
         查找 scrcpy 可执行文件路径。
-        搜索顺序类似 find_adb，但还包括 macOS 下的应用程序包。
+        搜索顺序类似 find_adb，还包括 macOS 下的应用程序包。
         """
         if manual_path and Path(manual_path).exists():
             return str(Path(manual_path).resolve())
@@ -128,14 +128,12 @@ class SystemUtils:
         if scrcpy_path:
             return scrcpy_path
 
-        # 常见路径
         home = Path.home()
         common_paths = []
         if SystemUtils.is_mac():
-            # macOS 下 scrcpy 通常放在 /usr/local/bin 或通过 brew 安装
             common_paths = [
-                "/usr/local/bin/scrcpy",
-                home / "scrcpy/scrcpy"   # 用户手动编译的常见位置
+                Path("/usr/local/bin/scrcpy"),
+                home / "scrcpy/scrcpy"
             ]
         elif SystemUtils.is_windows():
             common_paths = [
@@ -143,7 +141,7 @@ class SystemUtils:
             ]
         elif SystemUtils.is_linux():
             common_paths = [
-                "/usr/bin/scrcpy",
+                Path("/usr/bin/scrcpy"),
                 home / "scrcpy/scrcpy"
             ]
 
@@ -163,7 +161,6 @@ class SystemUtils:
         try:
             result = subprocess.run([adb_path, "version"], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                # 提取版本号的第一行
                 version_line = result.stdout.splitlines()[0] if result.stdout else ""
                 return True, version_line
             else:
