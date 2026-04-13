@@ -36,8 +36,9 @@ class DeviceWindow(QMainWindow):
         self.init_ui()
         self.init_toolbar()
         self.init_statusbar()
+        self.load_device_info_async()
         self.status_message.connect(self.show_status_message)
-        self.load_device_info()
+        self.load_device_info_async()
 
     def init_ui(self):
         central_widget = QWidget()
@@ -93,7 +94,8 @@ class DeviceWindow(QMainWindow):
         toolbar.addSeparator()
 
         refresh_action = QAction("刷新信息", self)
-        refresh_action.triggered.connect(self.load_device_info)
+        #refresh_action.triggered.connect(self.load_device_info)
+        refresh_action.triggered.connect(self.load_device_info_async)
         toolbar.addAction(refresh_action)
 
     def init_statusbar(self):
@@ -152,26 +154,243 @@ class DeviceWindow(QMainWindow):
         from ui.file_manager import FileManager
         return FileManager(self.serial, self.adb_client, parent=self)
 
-    def load_device_info(self):
+    def load_device_info_async(self):
+        """异步加载设备信息，逐步更新UI，避免卡顿"""
         self.status_label.setText("正在获取设备信息...")
-        print(f"[DeviceWindow] Loading device info for {self.serial}")
+        if hasattr(self, '_loading') and self._loading:
+            return
+        self._loading = True
         
-        model = self.adb_client.shell_sync("getprop ro.product.model", self.serial)
-        self._on_model_loaded(model.strip())
+        # 定义任务列表：每个任务包含 (描述, 获取函数, 更新UI的lambda)
+        tasks = [
+            ("设备型号", lambda: self.adb_client.shell_sync("getprop ro.product.model", self.serial),
+             lambda val: self.model_label.setText(val.strip() or "未知")),
+            ("Android版本", lambda: self.adb_client.shell_sync("getprop ro.build.version.release", self.serial),
+             lambda val: self.android_version_label.setText(val.strip() or "未知")),
+            ("电池信息", lambda: self.adb_client.shell_sync("dumpsys battery", self.serial),
+             lambda out: self._parse_battery(out)),
+            ("屏幕分辨率", lambda: self.adb_client.shell_sync("wm size", self.serial),
+             lambda out: self._parse_resolution(out)),
+            ("IMEI", lambda: self._get_imei(),
+             lambda val: self.imei_label.setText(val)),
+            ("MAC地址", lambda: self._get_mac_address(),
+             lambda val: self.mac_label.setText(val)),
+            ("蓝牙地址", lambda: self._get_bluetooth_address(),
+             lambda val: self.bluetooth_label.setText(val)),
+            ("网络状态", lambda: self._get_network_status(),
+             lambda val: self.network_label.setText(val)),
+            ("开机时间", lambda: self._get_uptime(),
+             lambda val: self.uptime_label.setText(val)),
+            ("CPU信息", lambda: self._get_cpu_info(),
+             lambda val: self.cpu_label.setText(val)),
+            ("内存信息", lambda: self._get_memory_info(),
+             lambda val: self.memory_label.setText(val)),
+            ("存储信息", lambda: self._get_storage_info(),
+             lambda val: self.storage_label.setText(val)),
+            ("显示屏详情", lambda: self._get_display_detail(),
+             lambda val: self.display_detail_label.setText(val)),
+            ("详细属性", lambda: self.adb_client.shell_sync("getprop", self.serial),
+             lambda out: self.detail_text.setText(out)),
+        ]
         
-        version = self.adb_client.shell_sync("getprop ro.build.version.release", self.serial)
-        self._on_android_version_loaded(version.strip())
-        
-        battery_out = self.adb_client.shell_sync("dumpsys battery", self.serial)
-        self._on_battery_loaded(battery_out)
-        
-        resolution_out = self.adb_client.shell_sync("wm size", self.serial)
-        self._on_resolution_loaded(resolution_out)
-        
-        props_out = self.adb_client.shell_sync("getprop", self.serial)
-        self._on_props_loaded(props_out)
-        
-        self.status_label.setText("设备信息已更新")
+        self._task_index = 0
+        self._tasks = tasks
+        self._run_next_task()
+
+    def _run_next_task(self):
+        """执行下一个任务，使用 QTimer 避免阻塞"""
+        if self._task_index >= len(self._tasks):
+            self.status_label.setText("设备信息已更新")
+            return
+        desc, func, update_ui = self._tasks[self._task_index]
+        self.status_label.setText(f"正在获取 {desc}...")
+        # 在单独的线程中执行同步命令？为了简单，仍用同步但通过 QTimer 延迟执行
+        # 注意：同步命令仍会短暂阻塞，但每个命令很快，且 UI 会在间隙刷新
+        try:
+            result = func()
+            update_ui(result)
+        except Exception as e:
+            print(f"获取 {desc} 失败: {e}")
+            update_ui("获取失败")
+        self._task_index += 1
+        # 延迟 10ms 执行下一个任务，让 UI 有机会刷新
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(10, self._run_next_task)
+
+
+    def _parse_battery(self, output: str):
+        level = "未知"
+        status = "未知"
+        for line in output.splitlines():
+            if "level:" in line:
+                level = line.split(":")[1].strip()
+            if "status:" in line:
+                status_code = line.split(":")[1].strip()
+                status_map = {"1": "未知", "2": "充电中", "3": "放电中", "4": "未充电", "5": "已满"}
+                status = status_map.get(status_code, status_code)
+        self.battery_label.setText(f"{level}% ({status})")
+
+    def _parse_resolution(self, output: str):
+        if "Physical size:" in output:
+            res = output.split(":")[1].strip()
+            self.resolution_label.setText(res)
+        else:
+            self.resolution_label.setText("未知")
+
+    def _get_imei(self) -> str:
+        # 方法1：通过 service call
+        out = self.adb_client.shell_sync("service call iphonesubinfo 1", self.serial)
+        # 解析输出中的数字，简单提取（较复杂，先尝试另一种）
+        # 方法2：dumpsys iphonesubinfo
+        out2 = self.adb_client.shell_sync("dumpsys iphonesubinfo | grep 'Device ID'", self.serial)
+        if "Device ID" in out2:
+            parts = out2.split("=")
+            if len(parts) > 1:
+                return parts[1].strip()
+        # 方法3：读取 /proc/imei（需要root）
+        return "未获取到"
+
+    def _get_mac_address(self) -> str:
+        out = self.adb_client.shell_sync("cat /sys/class/net/wlan0/address", self.serial)
+        if out and ":" in out:
+            return out.strip()
+        out2 = self.adb_client.shell_sync("ip link show wlan0 | grep ether", self.serial)
+        if "ether" in out2:
+            parts = out2.split()
+            for i, p in enumerate(parts):
+                if p == "ether" and i+1 < len(parts):
+                    return parts[i+1].strip()
+        return "未知"
+
+    def _get_bluetooth_address(self) -> str:
+        out = self.adb_client.shell_sync("settings get secure bluetooth_address", self.serial)
+        if out and ":" in out:
+            return out.strip()
+        return "未知"
+
+    def _get_network_status(self) -> str:
+        # 简单判断是否连接 WiFi
+        out = self.adb_client.shell_sync("dumpsys connectivity | grep -A 5 'NetworkAgentInfo'", self.serial)
+        if "WIFI" in out and "CONNECTED" in out:
+            return "WiFi 已连接"
+        elif "CELLULAR" in out and "CONNECTED" in out:
+            return "移动网络已连接"
+        else:
+            return "无网络连接"
+
+    def _get_uptime(self) -> str:
+        out = self.adb_client.shell_sync("uptime", self.serial)
+        # 输出格式: up time: 1 day, 2:34,  idle time: ...
+        if "up time:" in out:
+            import re
+            match = re.search(r"up time:\s*([^,]+)", out)
+            if match:
+                return match.group(1).strip()
+        return "未知"
+
+    def _get_cpu_info(self) -> str:
+        out = self.adb_client.shell_sync("cat /proc/cpuinfo", self.serial)
+        lines = out.splitlines()
+        for line in lines:
+            if "Hardware" in line:
+                return line.split(":")[1].strip()
+            if "Processor" in line:
+                return line.split(":")[1].strip()
+        return "未知"
+
+    def _get_memory_info(self) -> str:
+        out = self.adb_client.shell_sync("cat /proc/meminfo", self.serial)
+        total = "?"
+        available = "?"
+        for line in out.splitlines():
+            if "MemTotal:" in line:
+                total = line.split()[1]
+                total = f"{int(total)//1024} MB"
+            if "MemAvailable:" in line:
+                available = line.split()[1]
+                available = f"{int(available)//1024} MB"
+        return f"总计 {total}, 可用 {available}"
+
+    def _get_storage_info(self) -> str:
+        out = self.adb_client.shell_sync("df /data", self.serial)
+        lines = out.splitlines()
+        if len(lines) >= 2:
+            parts = lines[1].split()
+            if len(parts) >= 4:
+                size = parts[1]
+                used = parts[2]
+                return f"总容量 {size}, 已用 {used}"
+        return "未知"
+
+    def _get_display_detail(self) -> str:
+        out = self.adb_client.shell_sync("dumpsys display | grep mDisplayInfo", self.serial)
+        if "mDisplayInfo" in out:
+            # 提取分辨率、密度等信息
+            import re
+            # 例如: mDisplayInfo=DisplayInfo{"..."}
+            # 简单返回整行
+            return out.strip()
+        return "未知"
+
+
+
+    def create_info_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # 基本信息区域
+        info_group = QGroupBox("基本信息")
+        form_layout = QFormLayout()
+        self.model_label = QLabel("未知")
+        self.android_version_label = QLabel("未知")
+        self.battery_label = QLabel("未知")
+        self.resolution_label = QLabel("未知")
+        self.serial_label = QLabel(self.serial)
+
+        form_layout.addRow("设备型号:", self.model_label)
+        form_layout.addRow("Android 版本:", self.android_version_label)
+        form_layout.addRow("电池状态:", self.battery_label)
+        form_layout.addRow("屏幕分辨率:", self.resolution_label)
+        form_layout.addRow("序列号:", self.serial_label)
+        info_group.setLayout(form_layout)
+        layout.addWidget(info_group)
+
+        # 硬件与系统信息区域（新增）
+        hardware_group = QGroupBox("硬件与系统信息")
+        hw_layout = QFormLayout()
+        self.imei_label = QLabel("未知")
+        self.mac_label = QLabel("未知")
+        self.bluetooth_label = QLabel("未知")
+        self.network_label = QLabel("未知")
+        self.uptime_label = QLabel("未知")
+        self.cpu_label = QLabel("未知")
+        self.memory_label = QLabel("未知")
+        self.storage_label = QLabel("未知")
+        self.display_detail_label = QLabel("未知")
+
+        hw_layout.addRow("IMEI:", self.imei_label)
+        hw_layout.addRow("MAC 地址:", self.mac_label)
+        hw_layout.addRow("蓝牙地址:", self.bluetooth_label)
+        hw_layout.addRow("网络状态:", self.network_label)
+        hw_layout.addRow("开机时间:", self.uptime_label)
+        hw_layout.addRow("CPU 信息:", self.cpu_label)
+        hw_layout.addRow("内存信息:", self.memory_label)
+        hw_layout.addRow("存储信息:", self.storage_label)
+        hw_layout.addRow("显示屏详情:", self.display_detail_label)
+
+        hardware_group.setLayout(hw_layout)
+        layout.addWidget(hardware_group)
+
+        # 详细信息文本框（getprop 输出）
+        detail_group = QGroupBox("详细属性 (getprop)")
+        detail_layout = QVBoxLayout()
+        self.detail_text = QTextEdit()
+        self.detail_text.setReadOnly(True)
+        detail_layout.addWidget(self.detail_text)
+        detail_group.setLayout(detail_layout)
+        layout.addWidget(detail_group)
+
+        return widget
 
     def _on_model_loaded(self, model: str):
         print(f"_on_model_loaded: '{model}'")
