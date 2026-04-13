@@ -64,7 +64,7 @@ class DeviceWindow(QMainWindow):
         self.tab_widget.addTab(self.info_tab, "设备信息")
 
         # 应用管理选项卡（占位）
-        self.apps_tab = self.create_placeholder_tab("应用管理\n(待实现)")
+        self.apps_tab = self.create_apps_tab()
         self.tab_widget.addTab(self.apps_tab, "应用管理")
 
         # 文件管理选项卡（占位）
@@ -293,3 +293,8 @@ class DeviceWindow(QMainWindow):
 
 
 # 注意：AdbClient 需要增加 shell 和 reboot 方法，我们将在后续补全 adb_client.py
+    # 在 DeviceWindow 类中添加方法
+    def create_apps_tab(self) -> QWidget:
+        """创建应用管理选项卡"""
+        from ui.apps_tab import AppsTab
+        return AppsTab(self.serial, self.adb_client)

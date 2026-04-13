@@ -163,3 +163,21 @@ class AdbClient(QObject):
         if mode:
             args.append(mode)
         self._exec(args, device_serial, callback=callback)
+
+    def install(self, apk_path: str, device_serial: Optional[str] = None,
+            callback: Optional[Callable[[int, str, str], None]] = None):
+        """安装APK"""
+        args = ["install", "-r", apk_path]  # -r 覆盖安装
+        self._exec(args, device_serial, callback=callback)
+
+    def uninstall(self, package: str, device_serial: Optional[str] = None,
+              callback: Optional[Callable[[int, str, str], None]] = None):
+        """卸载应用"""
+        args = ["uninstall", package]
+        self._exec(args, device_serial, callback=callback)
+
+    def pull(self, remote_path: str, local_path: str, device_serial: Optional[str] = None,
+            callback: Optional[Callable[[int, str, str], None]] = None):
+        """从设备拉取文件到本地"""
+        args = ["pull", remote_path, local_path]
+        self._exec(args, device_serial, callback=callback)
