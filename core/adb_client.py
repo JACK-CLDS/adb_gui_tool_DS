@@ -142,3 +142,24 @@ class AdbClient(QObject):
         # self._exec(['shell', 'screencap', tmp_path], device_serial, lambda code, out, err: ...)
 
     # 更多方法（install, uninstall, pull, push, logcat, shell 等）后续逐步添加
+    
+    # 在 AdbClient 类中添加以下方法
+
+    def shell(self, command: str, device_serial: Optional[str] = None,
+            callback: Optional[Callable[[int, str, str], None]] = None):
+        """
+        执行 adb shell 命令
+        :param command: shell 命令
+        :param device_serial: 设备序列号
+        :param callback: 回调函数 (exit_code, stdout_str, stderr_str)
+        """
+        args = ["shell", command]
+        self._exec(args, device_serial, callback=callback)
+
+    def reboot(self, device_serial: str, mode: str = "",
+            callback: Optional[Callable[[int, str, str], None]] = None):
+        """重启设备，mode 可以是 "recovery", "bootloader", 或空字符串"""
+        args = ["reboot"]
+        if mode:
+            args.append(mode)
+        self._exec(args, device_serial, callback=callback)

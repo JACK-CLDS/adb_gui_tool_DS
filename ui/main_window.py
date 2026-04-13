@@ -423,21 +423,16 @@ class MainWindow(QMainWindow):
     
     def open_device_window(self, serial: str):
         """打开指定设备的控制窗口"""
-        # 避免重复打开同一个设备窗口（可根据需要决定是否允许多窗口）
         for s, win in self.device_windows:
             if s == serial and win.isVisible():
                 win.raise_()
                 win.activateWindow()
                 return
-        # TODO: 导入 DeviceWindow 类
-        # from ui.device_window import DeviceWindow
-        # win = DeviceWindow(serial, self.adb_client, self)
-        # 临时占位：显示提示
-        QMessageBox.information(self, "提示", f"设备 {serial} 的控制窗口尚未实现。")
-        return
-        # win.show()
-        # self.device_windows.append((serial, win))
-        # win.destroyed.connect(lambda: self.remove_device_window(serial, win))
+        from ui.device_window import DeviceWindow  # 放在方法内部避免循环导入
+        win = DeviceWindow(serial, self.adb_client, self)
+        win.show()
+        win.closed.connect(lambda: self.remove_device_window(serial, win))
+        self.device_windows.append((serial, win))
     
     def remove_device_window(self, serial, window):
         """从列表中移除已关闭的设备窗口"""
