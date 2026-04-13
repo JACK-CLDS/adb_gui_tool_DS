@@ -120,6 +120,21 @@ class AdbClient(QObject):
         args = ["shell", command]
         self._exec(args, device_serial, callback=callback)
 
+    def shell_sync(self, command: str, device_serial: Optional[str] = None) -> str:
+        """同步执行 shell 命令，返回输出字符串（用于设备信息等一次性加载）"""
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['shell', command])
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+            # 合并 stdout 和 stderr
+            return result.stdout + result.stderr
+        except Exception as e:
+            print(f"shell_sync error: {e}")
+            return ""
+
+
     def reboot(self, device_serial: str, mode: str = "",
                callback: Optional[Callable[[int, str, str], None]] = None):
         args = ["reboot"]
