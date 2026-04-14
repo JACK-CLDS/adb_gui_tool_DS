@@ -320,31 +320,118 @@ class FileManager(QWidget):
         local_path, _ = QFileDialog.getSaveFileName(self, "保存文件", filename)
         if not local_path:
             return
-        self.status_message.emit(f"正在下载 {filename} ...")
-        # 同步下载
+        
+        # 先获取远程文件大小
+        size_out = self.adb_client.shell_sync(f"ls -l {remote_path}", self.serial, timeout=5)
+        file_size = 0
+        if size_out:
+            parts = size_out.split()
+            if len(parts) >= 4:
+                try:
+                    file_size = int(parts[3])
+                except:
+                    pass
+        
+        progress = QProgressDialog(f"正在下载 {filename}...", "取消", 0, file_size, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        
         try:
-            self.adb_client.pull_sync(remote_path, local_path, self.serial)
-            self.status_message.emit(f"下载完成: {filename}")
-            QMessageBox.information(self, "下载成功", f"文件已保存到 {local_path}")
+            import subprocess
+            args = [self.adb_client.adb_path]
+            if self.serial:
+                args.extend(['-s', self.serial])
+            args.extend(['pull', remote_path, local_path])
+            
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            
+            for line in process.stdout:
+                if '%' in line:
+                    try:
+                        percent_str = line.split('%')[0].split()[-1]
+                        percent = int(percent_str)
+                        progress.setValue(int(file_size * percent / 100))
+                    except:
+                        pass
+                if progress.wasCanceled():
+                    process.terminate()
+                    break
+            
+            process.wait()
+            if process.returncode == 0 and not progress.wasCanceled():
+                progress.setValue(file_size)
+                self.status_message.emit(f"下载完成: {filename}")
+                QMessageBox.information(self, "下载成功", f"文件已保存到 {local_path}")
+            elif progress.wasCanceled():
+                self.status_message.emit(f"下载已取消: {filename}")
+            else:
+                self.status_message.emit(f"下载失败: {filename}")
+                QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败")
         except Exception as e:
             self.status_message.emit(f"下载失败: {filename}")
             QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败\n{str(e)}")
+        finally:
+            progress.close()
 
     def upload_file(self):
         local_paths, _ = QFileDialog.getOpenFileNames(self, "选择文件", "", "所有文件 (*.*)")
         if not local_paths:
             return
+        
         for local_path in local_paths:
             filename = os.path.basename(local_path)
             remote_path = self.current_path.rstrip('/') + '/' + filename
-            self.status_message.emit(f"正在上传 {filename} ...")
+            
+            # 获取文件大小
+            file_size = os.path.getsize(local_path)
+            
+            # 创建进度对话框
+            progress = QProgressDialog(f"正在上传 {filename}...", "取消", 0, file_size, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)  # 立即显示
+            progress.show()
+            
             try:
-                self.adb_client.push_sync(local_path, remote_path, self.serial)
-                self.status_message.emit(f"上传完成: {filename}")
-                self.load_path(self.current_path)
+                # 使用 subprocess 并实时读取输出（adb push 会输出进度）
+                import subprocess
+                args = [self.adb_client.adb_path]
+                if self.serial:
+                    args.extend(['-s', self.serial])
+                args.extend(['push', local_path, remote_path])
+                
+                process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                
+                # 实时读取输出并更新进度
+                for line in process.stdout:
+                    # adb push 输出格式: "file.apk: 50%"
+                    if '%' in line:
+                        try:
+                            percent_str = line.split('%')[0].split()[-1]
+                            percent = int(percent_str)
+                            progress.setValue(int(file_size * percent / 100))
+                        except:
+                            pass
+                    # 检查取消
+                    if progress.wasCanceled():
+                        process.terminate()
+                        break
+                
+                process.wait()
+                if process.returncode == 0 and not progress.wasCanceled():
+                    progress.setValue(file_size)
+                    self.status_message.emit(f"上传完成: {filename}")
+                    self.load_path(self.current_path)
+                elif progress.wasCanceled():
+                    self.status_message.emit(f"上传已取消: {filename}")
+                else:
+                    self.status_message.emit(f"上传失败: {filename}")
+                    QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败")
             except Exception as e:
                 self.status_message.emit(f"上传失败: {filename}")
                 QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
+            finally:
+                progress.close()
 
     def delete_file(self, remote_path: str, name: str):
         reply = QMessageBox.question(self, "确认删除", f"确定要删除 {name} 吗？",

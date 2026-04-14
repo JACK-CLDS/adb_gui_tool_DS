@@ -39,6 +39,9 @@ class DeviceWindow(QMainWindow):
         self.load_device_info_async()
         self.status_message.connect(self.show_status_message)
         self.load_device_info_async()
+        self.recording_process = None  # 录制进程
+        self.recording_file = None     # 录制文件路径
+        self.recording_pid = None
 
     def init_ui(self):
         central_widget = QWidget()
@@ -48,17 +51,17 @@ class DeviceWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
         #uni style
-#        self.tab_widget.setDocumentMode(True)
-#        self.tab_widget.setStyleSheet("""
-#            QTabBar::tab {
-#                padding: 6px 12px;
-#                margin: 2px;
-#            }
-#            QTabBar::tab:selected {
-#                background: palette(highlight);
-#                color: palette(highlighted-text);
-#            }
-#        """)
+        #        self.tab_widget.setDocumentMode(True)
+        #        self.tab_widget.setStyleSheet("""
+        #            QTabBar::tab {
+        #                padding: 6px 12px;
+        #                margin: 2px;
+        #            }
+        #            QTabBar::tab:selected {
+        #                background: palette(highlight);
+        #                color: palette(highlighted-text);
+        #            }
+        #        """)
 
         self.info_tab = self.create_info_tab()
         self.tab_widget.addTab(self.info_tab, "设备信息")
@@ -82,6 +85,11 @@ class DeviceWindow(QMainWindow):
         screenshot_action = QAction("截图", self)
         screenshot_action.triggered.connect(self.take_screenshot)
         toolbar.addAction(screenshot_action)
+
+        # 录制按钮
+        self.record_action = QAction("开始录制", self)
+        self.record_action.triggered.connect(self.start_recording)
+        toolbar.addAction(self.record_action)
 
         toolbar.addSeparator()
 
@@ -467,6 +475,122 @@ class DeviceWindow(QMainWindow):
         else:
             self.status_label.setText("截图失败")
             QMessageBox.warning(self, "错误", "截图失败，请确保设备已解锁且支持 screencap 命令。")
+
+    def start_recording(self):
+        from PyQt5.QtWidgets import QFileDialog
+        # 保存当前窗口引用
+        current_window = self
+        default_name = f"screen_record_{self.serial}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+        file_path, _ = QFileDialog.getSaveFileName(self, "保存录制文件", default_name, "MP4视频 (*.mp4)")
+        if not file_path:
+            return
+        
+        # 重新激活当前窗口
+        current_window.raise_()
+        current_window.activateWindow()
+        
+        self.recording_file = file_path
+        self.recording_remote_path = "/sdcard/temp_record.mp4"
+        self.status_label.setText("正在录制...")
+        
+        # 删除可能存在的旧文件
+        self.adb_client.shell_sync(f"rm {self.recording_remote_path}", self.serial)
+        
+        # 使用 subprocess.Popen 异步启动 screenrecord，不等待完成
+        import subprocess
+        self.recording_proc = subprocess.Popen(
+            [self.adb_client.adb_path, "-s", self.serial, "shell", "screenrecord", self.recording_remote_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # 等待一秒让进程启动
+        import time
+        time.sleep(1)
+        
+        # 获取 screenrecord 的 PID
+        pid_out = self.adb_client.shell_sync("pgrep screenrecord", self.serial)
+        try:
+            self.recording_pid = int(pid_out.strip())
+        except:
+            self.recording_pid = None
+        
+        # 修改按钮状态
+        self.record_action.setText("停止录制")
+        self.record_action.triggered.disconnect()
+        self.record_action.triggered.connect(self.stop_recording)
+
+    def stop_recording(self):
+        if hasattr(self, 'recording_pid') and self.recording_pid:
+            self.status_label.setText("正在停止录制...")
+            # 发送 SIGINT 信号
+            self.adb_client.shell_sync(f"kill -2 {self.recording_pid}", self.serial)
+            # 等待文件生成（最多5秒）
+            import time
+            for _ in range(10):
+                time.sleep(0.5)
+                if self._check_file_exists(self.recording_remote_path):
+                    break
+            self._finish_recording()
+        else:
+            self._finish_recording()
+
+    def _check_file_exists(self, remote_path):
+        out = self.adb_client.shell_sync(f"ls {remote_path}", self.serial)
+        return "No such file" not in out and remote_path in out
+
+    def _finish_recording(self):
+        self.status_label.setText("正在拉取文件...")
+        try:
+            self.adb_client.pull_sync(self.recording_remote_path, self.recording_file, self.serial, timeout=60)
+            self.adb_client.shell_sync(f"rm {self.recording_remote_path}", self.serial)
+            self.status_label.setText(f"录制完成: {self.recording_file}")
+            QMessageBox.information(self, "录制成功", f"屏幕录制已保存到:\n{self.recording_file}")
+        except Exception as e:
+            self.status_label.setText("拉取文件失败")
+            QMessageBox.warning(self, "录制失败", f"拉取录制文件失败: {str(e)}")
+        
+        # 恢复按钮状态
+        self.record_action.setText("开始录制")
+        self.record_action.triggered.disconnect()
+        self.record_action.triggered.connect(self.start_recording)
+        self.recording_pid = None
+
+    def _on_recording_output(self):
+        data = self.recording_process.readAllStandardOutput().data().decode('utf-8', errors='ignore')
+        if data:
+            print(f"[Recording] stdout: {data}")
+
+
+    def _on_recording_error(self):
+        """录制过程中的错误输出"""
+        err = self.recording_process.readAllStandardError().data().decode('utf-8', errors='ignore')
+        if "WARNING" in err:
+            # 忽略警告（如设备不支持某些功能）
+            pass
+        else:
+            print(f"[Recording] stderr: {err}")
+
+    #    def _on_recording_finished(self, exit_code, exit_status):
+    #        """录制完成，拉取文件到本地"""
+    #        if exit_code == 0:
+    #            self.status_label.setText("录制完成，正在拉取文件...")
+    #            # 拉取录制的文件
+    #            self.adb_client.pull_sync(self.recording_remote_path, self.recording_file, self.serial, timeout=60)
+    #            # 删除设备上的临时文件
+    #            self.adb_client.shell_sync(f"rm {self.recording_remote_path}", self.serial)
+    #            self.status_label.setText(f"录制完成: {self.recording_file}")
+    #            QMessageBox.information(self, "录制成功", f"屏幕录制已保存到:\n{self.recording_file}")
+    #        else:
+    #            self.status_label.setText("录制失败")
+    #            QMessageBox.warning(self, "录制失败", "屏幕录制失败，请检查设备是否支持 screenrecord 命令。")
+        
+        # 恢复按钮状态
+        self.record_action.setText("开始录制")
+        self.record_action.triggered.disconnect()
+        self.record_action.triggered.connect(self.start_recording)
+        self.recording_process = None
+
 
     def reboot_device(self, mode: str = ""):
         mode_text = {"": "重启", "recovery": "重启到 Recovery", "bootloader": "重启到 Bootloader"}.get(mode, "重启")
