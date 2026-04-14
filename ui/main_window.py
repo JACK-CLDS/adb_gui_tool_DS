@@ -80,10 +80,26 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
+#        self.device_table = QTableWidget()
+#        self.device_table.setColumnCount(3)
+#        self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
+#        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+#        self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+#        self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+#        self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+#        self.device_table.doubleClicked.connect(self.on_device_double_clicked)
+        # 设备表格
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(3)
         self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
-        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 允许用户手动调整列宽
+        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        # 设置初始列宽
+        self.device_table.setColumnWidth(0, 200)  # 设备名称列
+        self.device_table.setColumnWidth(1, 250)  # 序列号/地址列
+        self.device_table.setColumnWidth(2, 100)  # 状态列
+        # 启用排序
+        self.device_table.setSortingEnabled(True)
         self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -426,13 +442,20 @@ class MainWindow(QMainWindow):
         # 暂未使用，但保留占位
         pass
 
-    def update_device_table(self, devices):
+    def update_device_table(self, devices: List[tuple]):
+        """
+        更新设备表格
+        devices: [(serial, state, device_name), ...]
+        """
         if not self.device_manager:
             return
         self.device_table.setRowCount(len(devices))
         for row, (serial, state, name) in enumerate(devices):
-            self.device_table.setItem(row, 0, QTableWidgetItem(name))
-            self.device_table.setItem(row, 1, QTableWidgetItem(serial))
+            name_item = QTableWidgetItem(name)
+            name_item.setData(Qt.UserRole, serial)
+            self.device_table.setItem(row, 0, name_item)
+            serial_item = QTableWidgetItem(serial)
+            self.device_table.setItem(row, 1, serial_item)
             state_item = QTableWidgetItem(state)
             if state == "device":
                 state_item.setForeground(Qt.darkGreen)
@@ -441,3 +464,6 @@ class MainWindow(QMainWindow):
             elif state == "unauthorized":
                 state_item.setForeground(Qt.red)
             self.device_table.setItem(row, 2, state_item)
+        
+        # 默认按设备名称列升序排序
+        self.device_table.sortByColumn(0, Qt.AscendingOrder)

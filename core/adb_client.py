@@ -84,6 +84,26 @@ class AdbClient(QObject):
                     devices.append((parts[0], parts[1]))
         callback(devices)
 
+    def pull_sync(self, remote_path: str, local_path: str, device_serial: Optional[str] = None, timeout: int = 30):
+        """同步拉取文件"""
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['pull', remote_path, local_path])
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            raise Exception(result.stderr or result.stdout)
+
+    def push_sync(self, local_path: str, remote_path: str, device_serial: Optional[str] = None, timeout: int = 30):
+        """同步推送文件"""
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['push', local_path, remote_path])
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            raise Exception(result.stderr or result.stdout)
+
 
     #dbg
     import subprocess  # 确保文件顶部有导入
@@ -120,18 +140,33 @@ class AdbClient(QObject):
         args = ["shell", command]
         self._exec(args, device_serial, callback=callback)
 
-    def shell_sync(self, command: str, device_serial: Optional[str] = None) -> str:
-        """同步执行 shell 命令，返回输出字符串（用于设备信息等一次性加载）"""
+#    def shell_sync(self, command: str, device_serial: Optional[str] = None) -> str:
+#        """同步执行 shell 命令，返回输出字符串（用于设备信息等一次性加载）"""
+#        args = [self.adb_path]
+#        if device_serial:
+#            args.extend(['-s', device_serial])
+#        args.extend(['shell', command])
+#        try:
+#            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
+#            # 合并 stdout 和 stderr
+#            return result.stdout + result.stderr
+#        except Exception as e:
+#            print(f"shell_sync error: {e}")
+#            return ""
+
+    def shell_sync(self, command: str, device_serial: Optional[str] = None, timeout: int = 5) -> str:
         args = [self.adb_path]
         if device_serial:
             args.extend(['-s', device_serial])
         args.extend(['shell', command])
         try:
-            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
-            # 合并 stdout 和 stderr
+            result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
             return result.stdout + result.stderr
+        except subprocess.TimeoutExpired:
+            print(f"[WARN] shell_sync timeout for command: {command}")
+            return ""
         except Exception as e:
-            print(f"shell_sync error: {e}")
+            print(f"[WARN] shell_sync error: {e}")
             return ""
 
 

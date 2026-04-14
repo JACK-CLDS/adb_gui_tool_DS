@@ -1,53 +1,40 @@
 """
-ui/file_manager.py - 文件管理控件
-
-功能：
-    - 浏览设备文件系统（树形目录 + 文件列表）
-    - 支持上传（本地 -> 设备）、下载（设备 -> 本地）
-    - 支持删除、重命名、新建文件夹
-    - 显示隐藏文件（可切换）
-    - 路径收藏夹（储存在设备偏好中）
-    - 后续扩展：拖拽传输、压缩/解压
-
-依赖：PyQt5, core.adb_client, utils.config_manager
+ui/file_manager.py - 文件管理控件（同步版）
 """
 
 import os
-from typing import List, Optional
-
+from typing import List, Dict
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTreeWidget,
     QTreeWidgetItem, QTableWidget, QTableWidgetItem, QHeaderView,
     QLineEdit, QPushButton, QToolBar, QAction, QFileDialog,
     QMessageBox, QInputDialog, QProgressDialog, QMenu, QLabel
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QDir
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 
 from core.adb_client import AdbClient
-from utils.config_manager import ConfigManager
 
 
 class FileManager(QWidget):
-    """文件管理控件，可嵌入设备窗口的选项卡"""
+    status_message = pyqtSignal(str)
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
         self.serial = serial
         self.adb_client = adb_client
-        self.current_path = "/sdcard"  # 默认路径
-        self.show_hidden = False        # 是否显示隐藏文件（以.开头）
-        self.file_list = []             # 当前目录下的文件列表 [{name, is_dir, size, modified}, ...]
+        self.current_path = "/sdcard"
+        self.show_hidden = False
+        self.file_list = []
 
         self.init_ui()
         self.load_path(self.current_path)
 
     def init_ui(self):
-        """初始化界面布局"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # 顶部工具栏
+        # 工具栏
         toolbar = QToolBar()
         toolbar.setMovable(False)
         self.back_btn = QAction("返回", self)
@@ -68,7 +55,7 @@ class FileManager(QWidget):
         self.refresh_btn.triggered.connect(lambda: self.load_path(self.current_path))
         toolbar.addAction(self.refresh_btn)
 
-        self.home_btn = QAction("Home (/sdcard)", self)
+        self.home_btn = QAction("Home", self)
         self.home_btn.triggered.connect(lambda: self.load_path("/sdcard"))
         toolbar.addAction(self.home_btn)
 
@@ -83,6 +70,10 @@ class FileManager(QWidget):
         self.mkdir_btn.triggered.connect(self.create_directory)
         toolbar.addAction(self.mkdir_btn)
 
+        self.upload_btn = QAction("上传文件", self)
+        self.upload_btn.triggered.connect(self.upload_file)
+        toolbar.addAction(self.upload_btn)
+
         layout.addWidget(toolbar)
 
         # 地址栏
@@ -96,7 +87,7 @@ class FileManager(QWidget):
         address_layout.addWidget(self.go_btn)
         layout.addLayout(address_layout)
 
-        # 分割器：左侧目录树，右侧文件列表
+        # 分割器
         splitter = QSplitter(Qt.Horizontal)
         self.dir_tree = QTreeWidget()
         self.dir_tree.setHeaderLabel("目录")
@@ -107,68 +98,134 @@ class FileManager(QWidget):
         self.file_table = QTableWidget()
         self.file_table.setColumnCount(4)
         self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
-        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 允许用户手动调整列宽
+        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        # 设置初始列宽
+        self.file_table.setColumnWidth(0, 200)  # 名称列
+        self.file_table.setColumnWidth(1, 100)  # 大小列
+        self.file_table.setColumnWidth(2, 150)  # 修改时间列
+        self.file_table.setColumnWidth(3, 80)   # 类型列
+        # 启用排序（点击表头排序）
+        self.file_table.setSortingEnabled(True)
         self.file_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.file_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
+#        self.file_table = QTableWidget()
+#        self.file_table.setColumnCount(4)
+#        self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
+#        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+#        self.file_table.setSelectionBehavior(QTableWidget.SelectRows)
+#        self.file_table.setEditTriggers(QTableWidget.NoEditTriggers)
+#        self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
+#        self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
+#        self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
         splitter.addWidget(self.file_table)
 
         splitter.setSizes([250, 650])
         layout.addWidget(splitter)
 
     def load_path(self, path: str):
-        """加载指定路径的内容（异步）"""
+        """同步加载指定路径的文件列表，自动解析符号链接"""
         if not path:
             return
         path = path.rstrip('/')
         if not path:
             path = "/"
+        
+        # 递归解析符号链接（最多解析10层，带循环检测）
+        original_path = path
+        visited_paths = set()
+        for _ in range(10):
+            if path in visited_paths:
+                print(f"[FileManager] Warning: symlink loop detected at {path}")
+                break
+            visited_paths.add(path)
+            
+            check_out = self.adb_client.shell_sync(f"ls -ld {path}", self.serial, timeout=5)
+            if " -> " in check_out:
+                target = check_out.split(" -> ")[-1].strip()
+                print(f"[FileManager] {path} is a symlink to {target}")
+                path = target
+            else:
+                break
+        else:
+            print(f"[FileManager] Warning: symlink recursion limit reached for {original_path}")
+        
+        # 检查路径是否存在
+        test_out = self.adb_client.shell_sync(f"ls {path}", self.serial, timeout=5)
+        if "No such file" in test_out or "cannot access" in test_out:
+            self.status_message.emit(f"路径不存在: {path}")
+            QMessageBox.warning(self, "路径不存在", f"目录不存在:\n{path}\n\n请检查路径是否正确。")
+            return  # 不切换目录
+        
+        # 检查权限
+        if "Permission denied" in test_out:
+            self.status_message.emit(f"权限不足，无法访问 {path}")
+            QMessageBox.warning(self, "权限不足", f"没有权限访问目录:\n{path}\n\n请检查目录权限或尝试以 root 权限运行。")
+            return  # 不切换目录
+        
         self.current_path = path
         self.address_bar.setText(path)
-        self.status_message(f"正在加载 {path} ...")
-        # 使用 ls -la 获取文件列表
-        self.adb_client.shell(f"ls -la {path}", self.serial,
-                              callback=lambda code, out, err: self._on_ls_finished(code, out, err))
-
-    def _on_ls_finished(self, exit_code, stdout, stderr):
-        if exit_code != 0:
-            self.status_message(f"加载失败: {stderr}")
-            QMessageBox.warning(self, "错误", f"无法读取目录 {self.current_path}\n{stderr}")
-            return
-        # 解析 ls -la 输出
-        self.file_list = self._parse_ls_output(stdout)
+        self.status_message.emit(f"正在加载 {path} ...")
+        
+        out = self.adb_client.shell_sync(f"ls -la {path}", self.serial, timeout=10)
+        print(f"[FileManager] ls -la {path} returned {len(out)} bytes")
+        
+        self.file_list = self._parse_ls_output(out)
         self.populate_file_table()
-        self.status_message(f"已加载 {len(self.file_list)} 个项目")
-        # 刷新目录树（简单起见，先不实现树形结构，只显示当前目录下的子目录）
+        self.status_message.emit(f"已加载 {len(self.file_list)} 个项目")
         self.update_dir_tree()
 
-    def _parse_ls_output(self, output: str) -> List[dict]:
-        """解析 ls -la 输出，返回文件列表"""
+    def _parse_ls_output(self, output: str) -> List[Dict]:
+        """解析 ls -la 输出，支持两种日期格式（月日 时:分 或 YYYY-MM-DD HH:MM）"""
         files = []
         lines = output.splitlines()
-        # 跳过第一行 "total X"
         for line in lines:
             line = line.strip()
             if not line or line.startswith("total"):
                 continue
-            parts = line.split(maxsplit=8)
-            if len(parts) < 9:
+            
+            parts = line.split()
+            # 最少需要 8 个字段（权限 链接数 所有者 组 大小 日期 时间 文件名）
+            if len(parts) < 8:
+                print(f"[FileManager] Skipping line (too few parts): {line}")
                 continue
-            # 权限、链接数、所有者、组、大小、月份、日期、时间/年份、文件名
+            
             permissions = parts[0]
+            # 链接数 parts[1]
+            # 所有者 parts[2]
+            # 组 parts[3]
             size_str = parts[4]
-            month = parts[5]
-            day = parts[6]
-            time_or_year = parts[7]
-            name = parts[8]
-            # 是否为目录
+            
+            # 判断日期格式：如果第5部分包含 '-' 则认为是 YYYY-MM-DD 格式
+            date_part = parts[5]
+            if '-' in date_part and len(date_part) == 10:  # YYYY-MM-DD
+                month = date_part
+                day = ""
+                time_or_year = parts[6]  # HH:MM
+                name_index = 7
+            else:
+                # 旧格式：月份 日期 时间/年份
+                month = parts[5]
+                day = parts[6]
+                time_or_year = parts[7]
+                name_index = 8
+            
+            # 文件名（可能包含空格）
+            name = ' '.join(parts[name_index:])
+            
+            # 处理链接文件
+            if " -> " in name:
+                name = name.split(" -> ")[0]
+            
             is_dir = permissions.startswith('d')
-            # 是否隐藏文件（以.开头）
+            
             if not self.show_hidden and name.startswith('.'):
                 continue
-            # 大小格式化
+            
+            # 格式化大小
             try:
                 size = int(size_str)
                 if size < 1024:
@@ -177,10 +234,14 @@ class FileManager(QWidget):
                     size_display = f"{size/1024:.1f} KB"
                 else:
                     size_display = f"{size/(1024*1024):.1f} MB"
-            except:
+            except ValueError:
                 size_display = size_str
-            # 修改时间
-            modified = f"{month} {day} {time_or_year}"
+            
+            if day:
+                modified = f"{month} {day} {time_or_year}"
+            else:
+                modified = f"{month} {time_or_year}"
+            
             files.append({
                 "name": name,
                 "is_dir": is_dir,
@@ -189,12 +250,13 @@ class FileManager(QWidget):
                 "modified": modified,
                 "full_path": self.current_path.rstrip('/') + '/' + name
             })
-        # 排序：目录在前，文件在后，按名称排序
+        
         files.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        print(f"[FileManager] Parsed {len(files)} files/directories")
         return files
 
     def populate_file_table(self):
-        """填充文件列表表格"""
+        print(f"[FileManager] Populating table with {len(self.file_list)} items")
         self.file_table.setRowCount(len(self.file_list))
         for row, item in enumerate(self.file_list):
             name_item = QTableWidgetItem(item["name"])
@@ -208,12 +270,10 @@ class FileManager(QWidget):
             self.file_table.setItem(row, 3, QTableWidgetItem(file_type))
 
     def update_dir_tree(self):
-        """更新目录树（简化：只显示当前路径下的子目录）"""
         self.dir_tree.clear()
         root_item = QTreeWidgetItem([self.current_path])
         root_item.setData(0, Qt.UserRole, self.current_path)
         self.dir_tree.addTopLevelItem(root_item)
-        # 获取当前目录下的子目录
         subdirs = [item for item in self.file_list if item["is_dir"]]
         for sub in subdirs:
             child = QTreeWidgetItem([sub["name"]])
@@ -222,26 +282,22 @@ class FileManager(QWidget):
         root_item.setExpanded(True)
 
     def on_tree_item_double_clicked(self, item, column):
-        """双击目录树节点，加载对应路径"""
         path = item.data(0, Qt.UserRole)
         if path:
             self.load_path(path)
 
     def on_file_double_clicked(self, item):
-        """双击文件列表项：如果是目录则进入，如果是文件则下载（或打开提示）"""
         row = item.row()
         file_info = self.file_list[row]
         if file_info["is_dir"]:
             self.load_path(file_info["full_path"])
         else:
-            # 文件：询问下载
             reply = QMessageBox.question(self, "下载文件", f"是否下载文件 {file_info['name']} 到本地？",
                                          QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.download_file(file_info["full_path"], file_info["name"])
 
     def show_file_context_menu(self, position):
-        """文件列表右键菜单"""
         selected = self.file_table.selectedItems()
         if not selected:
             return
@@ -261,106 +317,90 @@ class FileManager(QWidget):
         menu.exec_(self.file_table.viewport().mapToGlobal(position))
 
     def download_file(self, remote_path: str, filename: str):
-        """下载文件到本地（弹出保存对话框）"""
         local_path, _ = QFileDialog.getSaveFileName(self, "保存文件", filename)
         if not local_path:
             return
-        self.status_message(f"正在下载 {filename} ...")
-        self.adb_client.pull(remote_path, local_path, self.serial,
-                              callback=lambda code, out, err: self._on_download_finished(code, out, err, filename, local_path))
-
-    def _on_download_finished(self, exit_code, stdout, stderr, filename, local_path):
-        if exit_code == 0:
-            self.status_message(f"下载完成: {filename}")
+        self.status_message.emit(f"正在下载 {filename} ...")
+        # 同步下载
+        try:
+            self.adb_client.pull_sync(remote_path, local_path, self.serial)
+            self.status_message.emit(f"下载完成: {filename}")
             QMessageBox.information(self, "下载成功", f"文件已保存到 {local_path}")
-        else:
-            self.status_message(f"下载失败: {filename}")
-            QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败\n{stderr}")
+        except Exception as e:
+            self.status_message.emit(f"下载失败: {filename}")
+            QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败\n{str(e)}")
 
     def upload_file(self):
-        """上传文件到当前目录"""
         local_paths, _ = QFileDialog.getOpenFileNames(self, "选择文件", "", "所有文件 (*.*)")
         if not local_paths:
             return
         for local_path in local_paths:
             filename = os.path.basename(local_path)
             remote_path = self.current_path.rstrip('/') + '/' + filename
-            self.status_message(f"正在上传 {filename} ...")
-            self.adb_client.push(local_path, remote_path, self.serial,
-                                 callback=lambda code, out, err, fn=filename: self._on_upload_finished(code, out, err, fn))
-
-    def _on_upload_finished(self, exit_code, stdout, stderr, filename):
-        if exit_code == 0:
-            self.status_message(f"上传完成: {filename}")
-            self.load_path(self.current_path)  # 刷新
-        else:
-            self.status_message(f"上传失败: {filename}")
-            QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{stderr}")
+            self.status_message.emit(f"正在上传 {filename} ...")
+            try:
+                self.adb_client.push_sync(local_path, remote_path, self.serial)
+                self.status_message.emit(f"上传完成: {filename}")
+                self.load_path(self.current_path)
+            except Exception as e:
+                self.status_message.emit(f"上传失败: {filename}")
+                QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
 
     def delete_file(self, remote_path: str, name: str):
-        """删除文件或空目录"""
         reply = QMessageBox.question(self, "确认删除", f"确定要删除 {name} 吗？",
                                      QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
-        self.adb_client.shell(f"rm -rf {remote_path}", self.serial,
-                              callback=lambda code, out, err: self._on_delete_finished(code, out, err, name))
-
-    def _on_delete_finished(self, exit_code, stdout, stderr, name):
-        if exit_code == 0:
-            self.status_message(f"已删除: {name}")
-            self.load_path(self.current_path)
+        out = self.adb_client.shell_sync(f"rm -rf {remote_path}", self.serial, timeout=5)
+        if "Permission denied" in out:
+            self.status_message.emit(f"删除失败: 权限不足")
+            QMessageBox.warning(self, "删除失败", f"无法删除 {name}\n权限不足，请检查文件权限。")
+        elif "No such file" in out or "cannot remove" in out:
+            self.status_message.emit(f"删除失败: {name}")
+            QMessageBox.warning(self, "删除失败", f"删除 {name} 失败\n{out}")
         else:
-            self.status_message(f"删除失败: {name}")
-            QMessageBox.warning(self, "删除失败", f"删除 {name} 失败\n{stderr}")
+            self.status_message.emit(f"已删除: {name}")
+            self.load_path(self.current_path)
 
     def rename_file(self, remote_path: str):
-        """重命名文件或目录"""
         old_name = remote_path.split('/')[-1]
         new_name, ok = QInputDialog.getText(self, "重命名", "新名称:", text=old_name)
         if not ok or not new_name or new_name == old_name:
             return
         dir_path = remote_path[:remote_path.rfind('/')]
         new_remote_path = dir_path + '/' + new_name
-        self.adb_client.shell(f"mv {remote_path} {new_remote_path}", self.serial,
-                              callback=lambda code, out, err: self._on_rename_finished(code, out, err, new_name))
-
-    def _on_rename_finished(self, exit_code, stdout, stderr, new_name):
-        if exit_code == 0:
-            self.status_message(f"重命名成功: {new_name}")
+        out = self.adb_client.shell_sync(f"mv {remote_path} {new_remote_path}", self.serial, timeout=5)
+        if "No such file" not in out and "cannot rename" not in out:
+            self.status_message.emit(f"重命名成功: {new_name}")
             self.load_path(self.current_path)
         else:
-            self.status_message(f"重命名失败: {new_name}")
-            QMessageBox.warning(self, "重命名失败", f"重命名失败\n{stderr}")
+            self.status_message.emit(f"重命名失败: {new_name}")
+            QMessageBox.warning(self, "重命名失败", f"重命名失败\n{out}")
 
     def create_directory(self):
-        """新建文件夹"""
         name, ok = QInputDialog.getText(self, "新建文件夹", "文件夹名称:")
         if not ok or not name:
             return
         new_path = self.current_path.rstrip('/') + '/' + name
-        self.adb_client.shell(f"mkdir {new_path}", self.serial,
-                              callback=lambda code, out, err: self._on_mkdir_finished(code, out, err, name))
-
-    def _on_mkdir_finished(self, exit_code, stdout, stderr, name):
-        if exit_code == 0:
-            self.status_message(f"已创建文件夹: {name}")
-            self.load_path(self.current_path)
+        out = self.adb_client.shell_sync(f"mkdir {new_path}", self.serial, timeout=5)
+        if "read-only" in out or "Permission denied" in out:
+            self.status_message.emit("创建失败: 权限不足")
+            QMessageBox.warning(self, "错误", "创建文件夹失败: 权限不足")
+        elif "File exists" in out:
+            self.status_message.emit("创建失败: 文件已存在")
+            QMessageBox.warning(self, "错误", "创建文件夹失败: 同名文件已存在")
         else:
-            self.status_message(f"创建文件夹失败: {name}")
-            QMessageBox.warning(self, "错误", f"创建文件夹失败\n{stderr}")
+            self.status_message.emit(f"已创建文件夹: {name}")
+            self.load_path(self.current_path)
 
     def go_back(self):
-        """返回历史（暂不实现历史栈）"""
         # TODO: 实现历史记录
         pass
 
     def go_forward(self):
-        """前进（暂不实现）"""
         pass
 
     def go_up(self):
-        """上级目录"""
         if self.current_path == "/":
             return
         parent = os.path.dirname(self.current_path.rstrip('/'))
@@ -369,19 +409,11 @@ class FileManager(QWidget):
         self.load_path(parent)
 
     def go_to_address(self):
-        """跳转到地址栏路径"""
         path = self.address_bar.text().strip()
         if not path:
             return
         self.load_path(path)
 
     def toggle_hidden(self, checked: bool):
-        """切换显示隐藏文件"""
         self.show_hidden = checked
         self.load_path(self.current_path)
-
-    def status_message(self, msg: str):
-        """发送状态消息（可被父窗口捕获显示在状态栏）"""
-        self.parent().status_message.emit(msg) if hasattr(self.parent(), "status_message") else None
-        # 也可以直接 print 调试
-        print(f"[FileManager] {msg}")
