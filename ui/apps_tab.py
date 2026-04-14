@@ -13,6 +13,7 @@ ui/apps_tab.py - 应用管理控件
 """
 
 import re
+import os
 from typing import List, Dict, Optional
 
 from PyQt5.QtWidgets import QStyle
@@ -410,22 +411,57 @@ class AppsTab(QWidget):
             self.install_apks(apk_paths)
 
     def install_apks(self, apk_paths: List[str]):
-        """安装多个APK，显示进度对话框"""
         if not apk_paths:
             return
-        # 确认安装
         reply = QMessageBox.question(self, "确认安装", f"确定要安装 {len(apk_paths)} 个APK吗？",
                                      QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             return
-        # 创建进度对话框
-        progress = QProgressDialog("正在安装...", "取消", 0, len(apk_paths), self)
-        progress.setWindowModality(Qt.WindowModal)
-        progress.show()
-        self._install_queue = list(apk_paths)
-        self._install_progress = progress
-        self._install_current_index = 0
-        self._install_next()
+        
+        for apk_path in apk_paths:
+            filename = os.path.basename(apk_path)
+            progress = QProgressDialog(f"正在安装 {filename}...", "取消", 0, 0, self)
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setCancelButtonText("取消")
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
+            progress.setRange(0, 0)  # 不确定进度
+            progress.show()
+            
+            args = [self.adb_client.adb_path]
+            if self.serial:
+                args.extend(['-s', self.serial])
+            args.extend(['install', '-r', apk_path])
+            
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            success = False
+            error_msg = ""
+            
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if progress.wasCanceled():
+                    process.terminate()
+                    break
+                if line:
+                    progress.setLabelText(f"正在安装 {filename}\n{line.strip()}")
+                    if "Success" in line:
+                        success = True
+                    elif "Failure" in line:
+                        error_msg = line.strip()
+            
+            process.wait()
+            progress.close()
+            
+            if progress.wasCanceled():
+                QMessageBox.information(self, "取消", f"已取消安装 {filename}")
+            elif success:
+                QMessageBox.information(self, "安装成功", f"{filename} 安装成功")
+                self.load_apps()  # 刷新应用列表
+            else:
+                QMessageBox.warning(self, "安装失败", f"{filename} 安装失败\n{error_msg}")
 
     def _install_next(self):
         """安装队列中的下一个APK"""

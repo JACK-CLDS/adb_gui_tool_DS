@@ -72,7 +72,9 @@ class DeviceWindow(QMainWindow):
         self.file_tab = self.create_file_manager_tab()
         self.tab_widget.addTab(self.file_tab, "文件管理")
 
-        self.log_tab = self.create_placeholder_tab("日志查看\n(待实现)")
+        #        self.log_tab = self.create_placeholder_tab("日志查看\n(待实现)")
+        #        self.tab_widget.addTab(self.log_tab, "日志")
+        self.log_tab = self.create_log_tab()
         self.tab_widget.addTab(self.log_tab, "日志")
 
         self.advanced_tab = self.create_placeholder_tab("高级功能\n(待实现)")
@@ -216,6 +218,10 @@ class DeviceWindow(QMainWindow):
         self._task_index = 0
         self._tasks = tasks
         self._run_next_task()
+
+    def create_log_tab(self) -> QWidget:
+        from ui.logcat_tab import LogcatTab
+        return LogcatTab(self.serial, self.adb_client)
 
     def _run_next_task(self):
         """执行下一个任务，使用 QTimer 避免阻塞"""
