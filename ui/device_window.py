@@ -80,6 +80,9 @@ class DeviceWindow(QMainWindow):
         self.advanced_tab = self.create_process_manager_tab()
         self.tab_widget.addTab(self.advanced_tab, "进程管理")
 
+        self.terminal_tab = self.create_terminal_tab()
+        self.tab_widget.addTab(self.terminal_tab, "终端")
+
     def init_toolbar(self):
         toolbar = self.addToolBar("设备操作")
         toolbar.setMovable(False)
@@ -1006,3 +1009,9 @@ class DeviceWindow(QMainWindow):
         except Exception as e:
             self.dump_log.append(f">>> 拉取失败: {str(e)}")
             QMessageBox.warning(dialog, "失败", f"拉取文件失败:\n{str(e)}")
+
+    def create_terminal_tab(self) -> QWidget:
+        from ui.terminal import TerminalWidget
+        terminal = TerminalWidget(self.serial, self.adb_client)
+        terminal.status_message.connect(self.show_status_message)
+        return terminal
