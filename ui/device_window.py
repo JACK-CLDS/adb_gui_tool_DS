@@ -119,6 +119,12 @@ class DeviceWindow(QMainWindow):
         #refresh_action.triggered.connect(self.load_device_info)
         refresh_action.triggered.connect(self.load_device_info_async)
         toolbar.addAction(refresh_action)
+        
+        # 在 shutdown_action 后面或工具栏末尾添加
+        toolbar.addSeparator()
+        monkey_action = QAction("Monkey测试", self)
+        monkey_action.triggered.connect(self.open_monkey_dialog)
+        toolbar.addAction(monkey_action)
 
     def init_statusbar(self):
         self.status_bar = QStatusBar()
@@ -577,19 +583,19 @@ class DeviceWindow(QMainWindow):
         else:
             print(f"[Recording] stderr: {err}")
 
-    #    def _on_recording_finished(self, exit_code, exit_status):
-    #        """录制完成，拉取文件到本地"""
-    #        if exit_code == 0:
-    #            self.status_label.setText("录制完成，正在拉取文件...")
-    #            # 拉取录制的文件
-    #            self.adb_client.pull_sync(self.recording_remote_path, self.recording_file, self.serial, timeout=60)
-    #            # 删除设备上的临时文件
-    #            self.adb_client.shell_sync(f"rm {self.recording_remote_path}", self.serial)
-    #            self.status_label.setText(f"录制完成: {self.recording_file}")
-    #            QMessageBox.information(self, "录制成功", f"屏幕录制已保存到:\n{self.recording_file}")
-    #        else:
-    #            self.status_label.setText("录制失败")
-    #            QMessageBox.warning(self, "录制失败", "屏幕录制失败，请检查设备是否支持 screenrecord 命令。")
+        #    def _on_recording_finished(self, exit_code, exit_status):
+        #        """录制完成，拉取文件到本地"""
+        #        if exit_code == 0:
+        #            self.status_label.setText("录制完成，正在拉取文件...")
+        #            # 拉取录制的文件
+        #            self.adb_client.pull_sync(self.recording_remote_path, self.recording_file, self.serial, timeout=60)
+        #            # 删除设备上的临时文件
+        #            self.adb_client.shell_sync(f"rm {self.recording_remote_path}", self.serial)
+        #            self.status_label.setText(f"录制完成: {self.recording_file}")
+        #            QMessageBox.information(self, "录制成功", f"屏幕录制已保存到:\n{self.recording_file}")
+        #        else:
+        #            self.status_label.setText("录制失败")
+        #            QMessageBox.warning(self, "录制失败", "屏幕录制失败，请检查设备是否支持 screenrecord 命令。")
         
         # 恢复按钮状态
         self.record_action.setText("开始录制")
@@ -597,6 +603,124 @@ class DeviceWindow(QMainWindow):
         self.record_action.triggered.connect(self.start_recording)
         self.recording_process = None
 
+    def open_monkey_dialog(self):
+        """打开 Monkey 测试设置对话框"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QSpinBox, QLineEdit, QPushButton, QDialogButtonBox, QTextEdit, QCheckBox
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Monkey 压力测试")
+        dialog.setMinimumWidth(500)
+        layout = QVBoxLayout(dialog)
+        
+        form = QFormLayout()
+        # 包名输入（可选，留空则测试所有应用）
+        self.monkey_package = QLineEdit()
+        self.monkey_package.setPlaceholderText("留空则测试所有应用")
+        form.addRow("目标包名:", self.monkey_package)
+        # 事件数量
+        self.monkey_events = QSpinBox()
+        self.monkey_events.setRange(100, 100000)
+        self.monkey_events.setValue(1000)
+        form.addRow("事件数量:", self.monkey_events)
+        # 延时（毫秒）
+        self.monkey_throttle = QSpinBox()
+        self.monkey_throttle.setRange(0, 1000)
+        self.monkey_throttle.setValue(100)
+        form.addRow("事件延时(ms):", self.monkey_throttle)
+        # 随机种子
+        self.monkey_seed = QSpinBox()
+        self.monkey_seed.setRange(1, 10000)
+        self.monkey_seed.setValue(1234)
+        form.addRow("随机种子:", self.monkey_seed)
+        # 是否忽略崩溃
+        self.monkey_ignore_crashes = QCheckBox("忽略崩溃")
+        self.monkey_ignore_crashes.setChecked(True)
+        form.addRow("", self.monkey_ignore_crashes)
+        # 是否忽略超时
+        self.monkey_ignore_timeouts = QCheckBox("忽略超时")
+        self.monkey_ignore_timeouts.setChecked(True)
+        form.addRow("", self.monkey_ignore_timeouts)
+        
+        layout.addLayout(form)
+        
+        # 日志输出区域
+        self.monkey_log = QTextEdit()
+        self.monkey_log.setReadOnly(True)
+        layout.addWidget(self.monkey_log)
+        
+        # 按钮
+        btn_box = QDialogButtonBox()
+        start_btn = QPushButton("开始测试")
+        stop_btn = QPushButton("停止")
+        cancel_btn = QPushButton("关闭")
+        btn_box.addButton(start_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(stop_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(cancel_btn, QDialogButtonBox.RejectRole)
+        layout.addWidget(btn_box)
+        
+        start_btn.clicked.connect(lambda: self.start_monkey_test(dialog))
+        stop_btn.clicked.connect(lambda: self.stop_monkey_test())
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        dialog.exec_()
+
+    def start_monkey_test(self, dialog):
+        """启动 monkey 测试进程，并实时显示日志"""
+        pkg = self.monkey_package.text().strip()
+        events = self.monkey_events.value()
+        throttle = self.monkey_throttle.value()
+        seed = self.monkey_seed.value()
+        ignore_crashes = self.monkey_ignore_crashes.isChecked()
+        ignore_timeouts = self.monkey_ignore_timeouts.isChecked()
+        
+        # 构建 monkey 命令
+        cmd = ["monkey"]
+        if pkg:
+            cmd.extend(["-p", pkg])
+        cmd.extend(["-v", "-v", "-v"])  # 详细日志级别
+        cmd.extend(["--throttle", str(throttle)])
+        cmd.extend(["-s", str(seed)])
+        if ignore_crashes:
+            cmd.append("--ignore-crashes")
+        if ignore_timeouts:
+            cmd.append("--ignore-timeouts")
+        cmd.append(str(events))
+        
+        self.monkey_log.append(f">>> 开始测试: {' '.join(cmd)}")
+        self.monkey_process = QProcess(self)
+        self.monkey_process.setProcessChannelMode(QProcess.MergedChannels)
+        self.monkey_process.readyReadStandardOutput.connect(lambda: self._on_monkey_output())
+        self.monkey_process.finished.connect(self._on_monkey_finished)
+        self.monkey_process.start(self.adb_client.adb_path, ["-s", self.serial, "shell"] + cmd)
+        
+        dialog.setWindowTitle("Monkey 测试运行中...")
+        # 禁用开始按钮，启用停止按钮
+        for child in dialog.findChildren(QPushButton):
+            if child.text() == "开始测试":
+                child.setEnabled(False)
+            elif child.text() == "停止":
+                child.setEnabled(True)
+
+    def _on_monkey_output(self):
+        """读取 monkey 输出并显示"""
+        data = self.monkey_process.readAllStandardOutput().data()
+        text = data.decode('utf-8', errors='ignore')
+        if hasattr(self, 'monkey_log'):
+            self.monkey_log.append(text)
+
+    def _on_monkey_finished(self, exit_code, exit_status):
+        """monkey 测试结束"""
+        if hasattr(self, 'monkey_log'):
+            self.monkey_log.append(f">>> 测试结束，退出码: {exit_code}")
+            # 重新启用对话框中的开始按钮（需要找到对话框实例，简化处理：关闭对话框时重新创建）
+            # 这里我们不需要动态查找，因为对话框会自己处理
+
+    def stop_monkey_test(self):
+        """停止 monkey 测试"""
+        if hasattr(self, 'monkey_process') and self.monkey_process.state() == QProcess.Running:
+            self.monkey_process.kill()
+            self.monkey_process.waitForFinished(2000)
+            if hasattr(self, 'monkey_log'):
+                self.monkey_log.append(">>> 用户手动停止测试")
 
     def reboot_device(self, mode: str = ""):
         mode_text = {"": "重启", "recovery": "重启到 Recovery", "bootloader": "重启到 Bootloader"}.get(mode, "重启")
