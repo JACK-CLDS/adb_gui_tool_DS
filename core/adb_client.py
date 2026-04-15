@@ -251,3 +251,15 @@ class AdbClient(QObject):
              callback: Optional[Callable[[int, str, str], None]] = None):
         args = ["push", local_path, remote_path]
         self._exec(args, device_serial, callback=callback)
+
+    def send_keyevent(self, keycode, device_serial=None):
+        """发送单个按键事件"""
+        args = ['input', 'keyevent', str(keycode)]
+        self._exec(args, device_serial)
+
+    def send_text(self, text, device_serial=None):
+        """发送文本字符串（需要转义空格等）"""
+        # 对文本中的空格、引号等特殊字符进行转义
+        escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+        args = ['input', 'text', escaped]
+        self._exec(args, device_serial)

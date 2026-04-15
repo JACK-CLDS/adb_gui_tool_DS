@@ -141,6 +141,11 @@ class DeviceWindow(QMainWindow):
         tcpdump_action = QAction("tcpdump抓包", self)
         tcpdump_action.triggered.connect(self.open_tcpdump_dialog)
         toolbar.addAction(tcpdump_action)
+        
+        toolbar.addSeparator()
+        keyboard_action = QAction("软键盘", self)
+        keyboard_action.triggered.connect(self.open_soft_keyboard)
+        toolbar.addAction(keyboard_action)
 
     def init_statusbar(self):
         self.status_bar = QStatusBar()
@@ -1015,3 +1020,8 @@ class DeviceWindow(QMainWindow):
         terminal = TerminalWidget(self.serial, self.adb_client)
         terminal.status_message.connect(self.show_status_message)
         return terminal
+
+    def open_soft_keyboard(self):
+        from ui.soft_keyboard import SoftKeyboardWindow
+        dlg = SoftKeyboardWindow(self.serial, self.adb_client, self)
+        dlg.exec_()
