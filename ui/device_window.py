@@ -134,6 +134,11 @@ class DeviceWindow(QMainWindow):
         monkey_action.triggered.connect(self.open_monkey_dialog)
         toolbar.addAction(monkey_action)
 
+        toolbar.addSeparator()
+        tcpdump_action = QAction("tcpdump抓包", self)
+        tcpdump_action.triggered.connect(self.open_tcpdump_dialog)
+        toolbar.addAction(tcpdump_action)
+
     def init_statusbar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -869,3 +874,135 @@ class DeviceWindow(QMainWindow):
             QTimer.singleShot(1000, self.load_device_info_async)
         else:
             QTimer.singleShot(1000, lambda: self._check_unroot_status(retry + 1))
+
+    def open_tcpdump_dialog(self):
+        """打开 tcpdump 抓包设置对话框"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QSpinBox, QLineEdit, QPushButton, QDialogButtonBox, QTextEdit, QCheckBox, QFileDialog
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("tcpdump 抓包")
+        dialog.setMinimumWidth(500)
+        layout = QVBoxLayout(dialog)
+        
+        form = QFormLayout()
+        # 抓包时长（秒），0 表示无限制（需要手动停止）
+        self.dump_duration = QSpinBox()
+        self.dump_duration.setRange(0, 3600)
+        self.dump_duration.setValue(30)
+        self.dump_duration.setSpecialValueText("无限制")
+        form.addRow("持续时间(秒):", self.dump_duration)
+        
+        # 包数量限制
+        self.dump_count = QSpinBox()
+        self.dump_count.setRange(0, 100000)
+        self.dump_count.setValue(1000)
+        self.dump_count.setSpecialValueText("无限制")
+        form.addRow("包数量限制:", self.dump_count)
+        
+        # 过滤表达式
+        self.dump_filter = QLineEdit()
+        self.dump_filter.setPlaceholderText("例如: host 192.168.1.1 or port 80")
+        form.addRow("过滤表达式:", self.dump_filter)
+        
+        # 输出文件名（设备上的临时文件）
+        self.remote_file = QLineEdit("/sdcard/capture.pcap")
+        form.addRow("设备临时文件:", self.remote_file)
+        
+        layout.addLayout(form)
+        
+        # 日志输出
+        self.dump_log = QTextEdit()
+        self.dump_log.setReadOnly(True)
+        layout.addWidget(self.dump_log)
+        
+        # 按钮
+        btn_box = QDialogButtonBox()
+        start_btn = QPushButton("开始抓包")
+        stop_btn = QPushButton("停止")
+        save_btn = QPushButton("保存并关闭")
+        cancel_btn = QPushButton("取消")
+        btn_box.addButton(start_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(stop_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(save_btn, QDialogButtonBox.ActionRole)
+        btn_box.addButton(cancel_btn, QDialogButtonBox.RejectRole)
+        layout.addWidget(btn_box)
+        
+        start_btn.clicked.connect(lambda: self.start_tcpdump(dialog))
+        stop_btn.clicked.connect(lambda: self.stop_tcpdump(dialog))
+        save_btn.clicked.connect(lambda: self.save_tcpdump(dialog))
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        dialog.exec_()
+
+    def start_tcpdump(self, dialog):
+        """启动 tcpdump 进程"""
+        duration = self.dump_duration.value()
+        count = self.dump_count.value()
+        filter_exp = self.dump_filter.text().strip()
+        remote_file = self.remote_file.text().strip()
+        
+        cmd = ["tcpdump", "-i", "any", "-w", remote_file]
+        if duration > 0:
+            cmd.extend(["-G", str(duration), "-W", "1"])
+        if count > 0:
+            cmd.extend(["-c", str(count)])
+        if filter_exp:
+            cmd.extend([filter_exp])  # 注意：tcpdump 过滤器需要放在最后
+        
+        self.dump_log.append(f">>> 开始抓包: {' '.join(cmd)}")
+        self.tcpdump_process = QProcess(self)
+        self.tcpdump_process.setProcessChannelMode(QProcess.MergedChannels)
+        self.tcpdump_process.readyReadStandardOutput.connect(lambda: self._on_tcpdump_output())
+        self.tcpdump_process.finished.connect(lambda: self._on_tcpdump_finished(dialog))
+        # 在设备上执行，需要 root 权限
+        full_cmd = ["-s", self.serial, "shell", "su", "-c"] + cmd
+        self.tcpdump_process.start(self.adb_client.adb_path, full_cmd)
+        
+        dialog.setWindowTitle("tcpdump 抓包中...")
+        # 禁用开始按钮，启用停止按钮
+        for child in dialog.findChildren(QPushButton):
+            if child.text() == "开始抓包":
+                child.setEnabled(False)
+            elif child.text() == "停止":
+                child.setEnabled(True)
+
+    def _on_tcpdump_output(self):
+        data = self.tcpdump_process.readAllStandardOutput().data()
+        text = data.decode('utf-8', errors='ignore')
+        if hasattr(self, 'dump_log'):
+            self.dump_log.append(text)
+
+    def _on_tcpdump_finished(self, dialog):
+        if hasattr(self, 'dump_log'):
+            self.dump_log.append(">>> 抓包进程结束")
+        # 恢复按钮状态
+        for child in dialog.findChildren(QPushButton):
+            if child.text() == "开始抓包":
+                child.setEnabled(True)
+            elif child.text() == "停止":
+                child.setEnabled(False)
+
+    def stop_tcpdump(self, dialog):
+        """停止 tcpdump 进程"""
+        if hasattr(self, 'tcpdump_process') and self.tcpdump_process.state() == QProcess.Running:
+            self.tcpdump_process.terminate()
+            self.tcpdump_process.waitForFinished(2000)
+            self.dump_log.append(">>> 用户手动停止抓包")
+
+    def save_tcpdump(self, dialog):
+        """将设备上的 pcap 文件拉取到本地"""
+        remote_file = self.remote_file.text().strip()
+        local_path, _ = QFileDialog.getSaveFileName(dialog, "保存抓包文件", "capture.pcap", "PCAP文件 (*.pcap)")
+        if not local_path:
+            return
+        self.dump_log.append(f">>> 正在拉取文件: {remote_file} -> {local_path}")
+        try:
+            self.adb_client.pull_sync(remote_file, local_path, self.serial)
+            self.dump_log.append(">>> 拉取成功")
+            QMessageBox.information(dialog, "成功", f"抓包文件已保存到:\n{local_path}")
+            # 可选：删除设备上的临时文件
+            self.adb_client.shell_sync(f"rm {remote_file}", self.serial)
+            dialog.accept()
+        except Exception as e:
+            self.dump_log.append(f">>> 拉取失败: {str(e)}")
+            QMessageBox.warning(dialog, "失败", f"拉取文件失败:\n{str(e)}")
