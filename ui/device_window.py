@@ -77,8 +77,8 @@ class DeviceWindow(QMainWindow):
         self.log_tab = self.create_log_tab()
         self.tab_widget.addTab(self.log_tab, "日志")
 
-        self.advanced_tab = self.create_placeholder_tab("高级功能\n(待实现)")
-        self.tab_widget.addTab(self.advanced_tab, "高级")
+        self.advanced_tab = self.create_process_manager_tab()
+        self.tab_widget.addTab(self.advanced_tab, "进程管理")
 
     def init_toolbar(self):
         toolbar = self.addToolBar("设备操作")
@@ -423,6 +423,12 @@ class DeviceWindow(QMainWindow):
         layout.addWidget(detail_group)
 
         return widget
+
+    def create_process_manager_tab(self) -> QWidget:
+        from ui.process_manager import ProcessManager
+        pm = ProcessManager(self.serial, self.adb_client)
+        pm.status_message.connect(self.show_status_message)
+        return pm
 
     def _on_model_loaded(self, model: str):
         print(f"_on_model_loaded: '{model}'")
