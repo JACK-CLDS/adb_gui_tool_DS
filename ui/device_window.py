@@ -112,6 +112,14 @@ class DeviceWindow(QMainWindow):
         shutdown_action = QAction("关机", self)
         shutdown_action.triggered.connect(self.shutdown_device)
         toolbar.addAction(shutdown_action)
+        
+        toolbar.addSeparator()
+        root_action = QAction("提权 (root)", self)
+        root_action.triggered.connect(self.enable_root)
+        toolbar.addAction(root_action)
+        unroot_action = QAction("解提权 (unroot)", self)
+        unroot_action.triggered.connect(self.disable_root)
+        toolbar.addAction(unroot_action)
 
         toolbar.addSeparator()
 
@@ -734,8 +742,7 @@ class DeviceWindow(QMainWindow):
                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.status_label.setText(f"正在{mode_text}...")
-            self.adb_client.reboot(self.serial, mode,
-                                   callback=lambda code, out, err: self._on_reboot_finished(code, mode_text))
+            self.adb_client.reboot(self.serial, mode,callback=lambda code, out, err: self._on_reboot_finished(code, mode_text))
 
     def _on_reboot_finished(self, exit_code, mode_text):
         if exit_code == 0:
@@ -750,8 +757,7 @@ class DeviceWindow(QMainWindow):
                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.status_label.setText("正在关机...")
-            self.adb_client.shell("reboot -p", self.serial,
-                                  callback=lambda code, out, err: self._on_shutdown_finished(code))
+            self.adb_client.shell("reboot -p", self.serial,callback=lambda code, out, err: self._on_shutdown_finished(code))
 
     def _on_shutdown_finished(self, exit_code):
         if exit_code == 0:
@@ -764,3 +770,102 @@ class DeviceWindow(QMainWindow):
     def closeEvent(self, event):
         self.closed.emit(self.serial)
         event.accept()
+    #    def enable_root(self):
+    #        """尝试以 root 权限重启 adbd"""
+    #        self.status_label.setText("正在提权...")
+    #        # 直接在主机端执行 adb root
+    #        proc = QProcess(self)
+    #        proc.setProcessChannelMode(QProcess.MergedChannels)
+    #        proc.finished.connect(lambda code, exit_status: self._on_root_finished(code, exit_status, proc))
+    #        proc.start(self.adb_client.adb_path, ["-s", self.serial, "root"])
+    #
+    #    def _on_root_finished(self, exit_code, exit_status, proc):
+    #        output = proc.readAllStandardOutput().data().decode('utf-8', errors='ignore')
+    #        output_lower = output.lower()
+    #        # 只要输出包含成功或已存在的提示，就认为提权成功或已处于 root 状态
+    #        if "restarting adbd as root" in output_lower or "already running as root" in output_lower:
+    #            if "already running as root" in output_lower:
+    #                self.status_label.setText("已经是 root 模式")
+    #                QMessageBox.information(self, "提权提示", "adbd 已经以 root 权限运行。")
+    #            else:
+    #                self.status_label.setText("提权成功，adbd 已重启为 root 模式")
+    #                QMessageBox.information(self, "提权成功", "adbd 已以 root 权限运行。\n注意：设备可能短暂断开后重连。")
+    #            QTimer.singleShot(2000, self.load_device_info_async)
+    #        else:
+    #            self.status_label.setText("提权失败")
+    #            QMessageBox.warning(self, "提权失败", f"设备不支持 adb root 或操作失败:\n{output}")
+    #
+    #    def disable_root(self):
+    #        """恢复 adbd 为非 root 模式"""
+    #        self.status_label.setText("正在解除提权...")
+    #        proc = QProcess(self)
+    #        proc.setProcessChannelMode(QProcess.MergedChannels)
+    #        proc.finished.connect(lambda code, exit_status: self._on_unroot_finished(code, exit_status, proc))
+    #        proc.start(self.adb_client.adb_path, ["-s", self.serial, "unroot"])
+    #
+    #    def _on_unroot_finished(self, exit_code, exit_status, proc):
+    #        output = proc.readAllStandardOutput().data().decode('utf-8', errors='ignore')
+    #        output_lower = output.lower()
+    #        if exit_code == 0 and ("restarting adbd as non root" in output_lower or "already running as non root" in output_lower):
+    #            if "already running as non root" in output_lower:
+    #                self.status_label.setText("已经是非 root 模式")
+    #                QMessageBox.information(self, "解提权提示", "adbd 已经以非 root 权限运行。")
+    #            else:
+    #                self.status_label.setText("已解除 root 模式")
+    #                QMessageBox.information(self, "解提权成功", "adbd 已恢复为非 root 模式。")
+    #            QTimer.singleShot(2000, self.load_device_info_async)
+    #        else:
+    #            self.status_label.setText("解提权失败")
+    #            QMessageBox.warning(self, "解提权失败", output)
+    def enable_root(self):
+        """尝试以 root 权限重启 adbd"""
+        self.status_label.setText("正在提权...")
+        # 先执行 adb root
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.MergedChannels)
+        proc.finished.connect(self._on_root_command_finished)
+        proc.start(self.adb_client.adb_path, ["-s", self.serial, "root"])
+
+    def _on_root_command_finished(self, exit_code, exit_status):
+        """adb root 命令执行完成，开始轮询检查是否真正成为 root"""
+        self.status_label.setText("提权命令已发送，等待设备重新连接...")
+        QTimer.singleShot(1000, lambda: self._check_root_status(0))
+
+    def _check_root_status(self, retry):
+        """检查设备是否已处于 root 状态，最多重试 10 次"""
+        if retry >= 10:
+            self.status_label.setText("提权失败：超时")
+            QMessageBox.warning(self, "提权失败", "设备未能在预期时间内切换到 root 模式。")
+            return
+        out = self.adb_client.shell_sync("id", self.serial, timeout=2)
+        if "uid=0" in out:
+            self.status_label.setText("提权成功，adbd 已以 root 权限运行")
+            QMessageBox.information(self, "提权成功", "adbd 已以 root 权限运行。")
+            QTimer.singleShot(1000, self.load_device_info_async)
+        else:
+            QTimer.singleShot(1000, lambda: self._check_root_status(retry + 1))
+
+    def disable_root(self):
+        """恢复 adbd 为非 root 模式"""
+        self.status_label.setText("正在解除提权...")
+        proc = QProcess(self)
+        proc.setProcessChannelMode(QProcess.MergedChannels)
+        proc.finished.connect(self._on_unroot_command_finished)
+        proc.start(self.adb_client.adb_path, ["-s", self.serial, "unroot"])
+
+    def _on_unroot_command_finished(self, exit_code, exit_status):
+        self.status_label.setText("解提权命令已发送，等待设备重新连接...")
+        QTimer.singleShot(1000, lambda: self._check_unroot_status(0))
+
+    def _check_unroot_status(self, retry):
+        if retry >= 10:
+            self.status_label.setText("解提权失败：超时")
+            QMessageBox.warning(self, "解提权失败", "设备未能在预期时间内切换到非 root 模式。")
+            return
+        out = self.adb_client.shell_sync("id", self.serial, timeout=2)
+        if "uid=0" not in out:
+            self.status_label.setText("已解除 root 模式")
+            QMessageBox.information(self, "解提权成功", "adbd 已恢复为非 root 模式。")
+            QTimer.singleShot(1000, self.load_device_info_async)
+        else:
+            QTimer.singleShot(1000, lambda: self._check_unroot_status(retry + 1))
