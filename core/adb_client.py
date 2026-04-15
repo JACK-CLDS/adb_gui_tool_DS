@@ -104,6 +104,61 @@ class AdbClient(QObject):
         if result.returncode != 0:
             raise Exception(result.stderr or result.stdout)
 
+    def pull_with_progress(self, remote_path: str, local_path: str, device_serial: Optional[str] = None,
+                           progress_callback: Optional[Callable[[int], None]] = None) -> bool:
+        """
+        同步拉取文件，实时解析进度并回调
+        progress_callback: 接收百分比整数 (0-100)
+        返回是否成功
+        """
+        import subprocess
+        import re
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['pull', remote_path, local_path])
+        
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   universal_newlines=True, bufsize=1)
+        last_percent = -1
+        for line in process.stdout:
+            # adb pull 输出格式: "   XX%   (XX MB/s)  ..."
+            print(f"[DEBUG] pull line: {line.strip()}")
+            match = re.search(r'(\d+)%', line)
+            if match:
+                percent = int(match.group(1))
+                if percent != last_percent and progress_callback:
+                    progress_callback(percent)
+                    last_percent = percent
+        process.wait()
+        return process.returncode == 0
+
+    def push_with_progress(self, local_path: str, remote_path: str, device_serial: Optional[str] = None,
+                           progress_callback: Optional[Callable[[int], None]] = None) -> bool:
+        """
+        同步推送文件，实时解析进度并回调
+        """
+        import subprocess
+        import re
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['push', local_path, remote_path])
+        
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   universal_newlines=True, bufsize=1)
+        last_percent = -1
+        for line in process.stdout:
+            # adb push 输出格式: "   XX%   (XX MB/s)  ..."
+            print(f"[DEBUG] push line: {line.strip()}")   # 添加这一行
+            match = re.search(r'(\d+)%', line)
+            if match:
+                percent = int(match.group(1))
+                if percent != last_percent and progress_callback:
+                    progress_callback(percent)
+                    last_percent = percent
+        process.wait()
+        return process.returncode == 0
 
     #dbg
     import subprocess  # 确保文件顶部有导入

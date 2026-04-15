@@ -26,6 +26,7 @@ class FileManager(QWidget):
         self.current_path = "/sdcard"
         self.show_hidden = False
         self.file_list = []
+        self.setAcceptDrops(True)
 
         self.init_ui()
         self.load_path(self.current_path)
@@ -112,15 +113,15 @@ class FileManager(QWidget):
         self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
-#        self.file_table = QTableWidget()
-#        self.file_table.setColumnCount(4)
-#        self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
-#        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-#        self.file_table.setSelectionBehavior(QTableWidget.SelectRows)
-#        self.file_table.setEditTriggers(QTableWidget.NoEditTriggers)
-#        self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
-#        self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
-#        self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
+        #        self.file_table = QTableWidget()
+        #        self.file_table.setColumnCount(4)
+        #        self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
+        #        self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        #        self.file_table.setSelectionBehavior(QTableWidget.SelectRows)
+        #        self.file_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        #        self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        #        self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
+        #        self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
         splitter.addWidget(self.file_table)
 
         splitter.setSizes([250, 650])
@@ -317,64 +318,41 @@ class FileManager(QWidget):
         menu.exec_(self.file_table.viewport().mapToGlobal(position))
 
     def download_file(self, remote_path: str, filename: str):
+        from PyQt5.QtWidgets import QProgressDialog
+        
         local_path, _ = QFileDialog.getSaveFileName(self, "保存文件", filename)
         if not local_path:
             return
         
-        # 先获取远程文件大小
-        size_out = self.adb_client.shell_sync(f"ls -l {remote_path}", self.serial, timeout=5)
-        file_size = 0
-        if size_out:
-            parts = size_out.split()
-            if len(parts) >= 4:
-                try:
-                    file_size = int(parts[3])
-                except:
-                    pass
-        
-        progress = QProgressDialog(f"正在下载 {filename}...", "取消", 0, file_size, self)
+        progress = QProgressDialog(f"正在下载 {filename}...", "取消", 0, 100, self)
         progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
         progress.show()
         
+        def update_progress(percent):
+            if progress.wasCanceled():
+                return
+            progress.setValue(percent)
+            if percent >= 100:
+                progress.setLabelText("下载完成，正在完成...")
+        
         try:
-            import subprocess
-            args = [self.adb_client.adb_path]
-            if self.serial:
-                args.extend(['-s', self.serial])
-            args.extend(['pull', remote_path, local_path])
-            
-            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-            
-            for line in process.stdout:
-                if '%' in line:
-                    try:
-                        percent_str = line.split('%')[0].split()[-1]
-                        percent = int(percent_str)
-                        progress.setValue(int(file_size * percent / 100))
-                    except:
-                        pass
-                if progress.wasCanceled():
-                    process.terminate()
-                    break
-            
-            process.wait()
-            if process.returncode == 0 and not progress.wasCanceled():
-                progress.setValue(file_size)
+            success = self.adb_client.pull_with_progress(remote_path, local_path, self.serial, update_progress)
+            if success:
+                progress.setValue(100)
                 self.status_message.emit(f"下载完成: {filename}")
                 QMessageBox.information(self, "下载成功", f"文件已保存到 {local_path}")
-            elif progress.wasCanceled():
-                self.status_message.emit(f"下载已取消: {filename}")
             else:
-                self.status_message.emit(f"下载失败: {filename}")
-                QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败")
+                raise Exception("拉取失败")
         except Exception as e:
+            progress.close()
             self.status_message.emit(f"下载失败: {filename}")
             QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败\n{str(e)}")
-        finally:
-            progress.close()
 
     def upload_file(self):
+        from PyQt5.QtWidgets import QProgressDialog
+        
         local_paths, _ = QFileDialog.getOpenFileNames(self, "选择文件", "", "所有文件 (*.*)")
         if not local_paths:
             return
@@ -383,55 +361,31 @@ class FileManager(QWidget):
             filename = os.path.basename(local_path)
             remote_path = self.current_path.rstrip('/') + '/' + filename
             
-            # 获取文件大小
-            file_size = os.path.getsize(local_path)
-            
-            # 创建进度对话框
-            progress = QProgressDialog(f"正在上传 {filename}...", "取消", 0, file_size, self)
+            progress = QProgressDialog(f"正在上传 {filename}...", "取消", 0, 100, self)
             progress.setWindowModality(Qt.WindowModal)
-            progress.setMinimumDuration(0)  # 立即显示
+            progress.setAutoClose(True)
+            progress.setAutoReset(True)
             progress.show()
             
+            def update_progress(percent):
+                if progress.wasCanceled():
+                    return
+                progress.setValue(percent)
+                if percent >= 100:
+                    progress.setLabelText("上传完成，正在完成...")
+            
             try:
-                # 使用 subprocess 并实时读取输出（adb push 会输出进度）
-                import subprocess
-                args = [self.adb_client.adb_path]
-                if self.serial:
-                    args.extend(['-s', self.serial])
-                args.extend(['push', local_path, remote_path])
-                
-                process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-                
-                # 实时读取输出并更新进度
-                for line in process.stdout:
-                    # adb push 输出格式: "file.apk: 50%"
-                    if '%' in line:
-                        try:
-                            percent_str = line.split('%')[0].split()[-1]
-                            percent = int(percent_str)
-                            progress.setValue(int(file_size * percent / 100))
-                        except:
-                            pass
-                    # 检查取消
-                    if progress.wasCanceled():
-                        process.terminate()
-                        break
-                
-                process.wait()
-                if process.returncode == 0 and not progress.wasCanceled():
-                    progress.setValue(file_size)
+                success = self.adb_client.push_with_progress(local_path, remote_path, self.serial, update_progress)
+                if success:
+                    progress.setValue(100)
                     self.status_message.emit(f"上传完成: {filename}")
-                    self.load_path(self.current_path)
-                elif progress.wasCanceled():
-                    self.status_message.emit(f"上传已取消: {filename}")
+                    self.load_path(self.current_path)  # 刷新列表
                 else:
-                    self.status_message.emit(f"上传失败: {filename}")
-                    QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败")
+                    raise Exception("推送失败")
             except Exception as e:
+                progress.close()
                 self.status_message.emit(f"上传失败: {filename}")
                 QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
-            finally:
-                progress.close()
 
     def delete_file(self, remote_path: str, name: str):
         reply = QMessageBox.question(self, "确认删除", f"确定要删除 {name} 吗？",
@@ -479,6 +433,48 @@ class FileManager(QWidget):
         else:
             self.status_message.emit(f"已创建文件夹: {name}")
             self.load_path(self.current_path)
+
+    def dragEnterEvent(self, event):
+        """拖拽进入时检查是否包含文件（本地文件）"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        """拖拽放下时，将文件上传到当前目录"""
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+        local_paths = []
+        for url in urls:
+            path = url.toLocalFile()
+            if path:  # 本地文件
+                local_paths.append(path)
+        if local_paths:
+            self.upload_files(local_paths)
+
+    def upload_files(self, local_paths: List[str]):
+        """上传多个文件到当前目录"""
+        if not local_paths:
+            return
+        # 确认上传
+        reply = QMessageBox.question(self, "确认上传", f"确定要上传 {len(local_paths)} 个文件到当前目录吗？",
+                                     QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            return
+        for local_path in local_paths:
+            filename = os.path.basename(local_path)
+            remote_path = self.current_path.rstrip('/') + '/' + filename
+            self.status_message.emit(f"正在上传 {filename} ...")
+            try:
+                self.adb_client.push_sync(local_path, remote_path, self.serial)
+                self.status_message.emit(f"上传完成: {filename}")
+            except Exception as e:
+                self.status_message.emit(f"上传失败: {filename}")
+                QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
+        # 刷新文件列表
+        self.load_path(self.current_path)
 
     def go_back(self):
         # TODO: 实现历史记录
