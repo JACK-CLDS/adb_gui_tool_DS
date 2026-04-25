@@ -190,6 +190,12 @@ class AdbClient(QObject):
         except Exception as e:
             callback(False, str(e))
 
+    def disconnect_device(self, address: str, callback: Callable[[bool, str], None] = None):
+        def handle(exit_code, stdout, stderr):
+            if callback:
+                callback(exit_code == 0, stdout.strip() or stderr.strip())
+        self._exec(['disconnect', address], callback=handle)
+
     def shell(self, command: str, device_serial: Optional[str] = None,
             callback: Optional[Callable[[int, str, str], None]] = None):
         args = ["shell", command]

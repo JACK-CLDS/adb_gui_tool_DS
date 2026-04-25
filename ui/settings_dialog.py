@@ -116,12 +116,20 @@ class SettingsDialog(QDialog):
         new_lang = self.lang_combo.currentData()
         new_refresh = self.refresh_spin.value()
 
+        old_adb = self.settings.get("adb_path", "")
+        old_scrcpy = self.settings.get("scrcpy_path", "")
+        old_lang = self.settings.get("language", "auto")
+        old_refresh = self.settings.get("auto_refresh_interval", 3000)
+
         # 保存设置
         ConfigManager.set_setting("adb_path", new_adb_path)
         ConfigManager.set_setting("scrcpy_path", new_scrcpy_path)
         ConfigManager.set_setting("language", new_lang)
         ConfigManager.set_setting("auto_refresh_interval", new_refresh)
 
-        # 提示重启
-        QMessageBox.information(self, "设置已保存", "部分设置需要重启程序才能完全生效。")
+        # 只有关键路径发生变化时才提示重启
+        if new_adb_path != old_adb or new_scrcpy_path != old_scrcpy:
+            QMessageBox.information(self, "设置已保存", "ADB 或 scrcpy 路径已修改，请重启程序以使更改生效。")
+        else:
+            QMessageBox.information(self, "设置已保存", "设置已保存。")
         self.accept()

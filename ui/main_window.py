@@ -80,15 +80,19 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-#        self.device_table = QTableWidget()
-#        self.device_table.setColumnCount(3)
-#        self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
-#        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-#        self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-#        self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-#        self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-#        self.device_table.doubleClicked.connect(self.on_device_double_clicked)
-        # 设备表格
+        #        self.device_table = QTableWidget()
+        #        self.device_table.setColumnCount(3)
+        #        self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
+        #        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        #        self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        #        self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        #        self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        #        self.device_table.doubleClicked.connect(self.on_device_double_clicked)
+                # 设备表格
+        
+        #        self.device_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        #        self.device_table.customContextMenuRequested.connect(self.show_device_menu)
+        
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(3)
         self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
@@ -218,6 +222,7 @@ class MainWindow(QMainWindow):
         self.favorites_tree.setHeaderLabel("收藏设备")
         self.favorites_tree.setIndentation(10)
         self.favorites_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.history_tree.customContextMenuRequested.connect(self.show_history_menu)
         self.favorites_tree.customContextMenuRequested.connect(self.show_favorites_menu)
         self.favorites_tree.itemDoubleClicked.connect(self.on_favorite_item_clicked)
         layout.addWidget(self.favorites_tree)
@@ -225,6 +230,25 @@ class MainWindow(QMainWindow):
         self.refresh_history_tree()
         self.refresh_favorites_tree()
         return sidebar
+
+    def show_history_menu(self, position):
+        item = self.history_tree.itemAt(position)
+        if not item:
+            return
+        menu = QMenu()
+        delete_action = QAction("删除此记录", self)
+        delete_action.triggered.connect(lambda: self.delete_history_item(item))
+        menu.addAction(delete_action)
+        menu.exec_(self.history_tree.viewport().mapToGlobal(position))
+
+    def delete_history_item(self, item):
+        addr = item.text(0)
+        history = ConfigManager.get_history()
+        if addr in history:
+            history.remove(addr)
+            ConfigManager._write_json_file(HISTORY_FILE, history)  # 注意：需要导入 HISTORY_FILE 或使用 ConfigManager 的方法
+            self.refresh_history_tree()
+            self.log_message(f"已从历史记录中删除: {addr}")
 
     def refresh_history_tree(self):
         self.history_tree.clear()
@@ -243,6 +267,26 @@ class MainWindow(QMainWindow):
     def on_history_item_clicked(self, item, col):
         self.address_input.setText(item.text(0))
         self.connect_to_address()
+
+    def show_device_menu(self, position):
+        item = self.device_table.itemAt(position)
+        if not item:
+            return
+        row = item.row()
+        serial_item = self.device_table.item(row, 1)
+        if not serial_item:
+            return
+        serial = serial_item.text()
+        menu = QMenu()
+        disconnect_action = QAction("断开连接", self)
+        disconnect_action.triggered.connect(lambda: self.disconnect_device(serial))
+        menu.addAction(disconnect_action)
+        menu.exec_(self.device_table.viewport().mapToGlobal(position))
+
+    def disconnect_device(self, serial):
+        self.adb_client.disconnect_device(serial, callback=lambda success, msg: self.log_message(f"断开连接: {msg}"))
+        # 刷新设备列表
+        self.device_manager.manual_refresh()
 
     def on_favorite_item_clicked(self, item, col):
         if item.parent() is not None:

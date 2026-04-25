@@ -127,6 +127,14 @@ class ConfigManager:
         """清空历史记录"""
         return ConfigManager._write_json_file(HISTORY_FILE, [])
 
+    @staticmethod
+    def remove_history(address: str) -> bool:
+        history = ConfigManager.get_history()
+        if address in history:
+            history.remove(address)
+            return ConfigManager._write_json_file(HISTORY_FILE, history)
+        return False
+
     # ---------- 收藏设备 ----------
     @staticmethod
     def get_favorites() -> Dict[str, List[str]]:
