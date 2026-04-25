@@ -15,6 +15,9 @@ from utils.system_utils import SystemUtils
 from core.adb_client import AdbClient
 from ui.main_window import MainWindow
 
+import platform
+if platform.system() == "Darwin":
+    os.environ["QT_IM_MODULE"] = "simple"
 
 def check_dependencies():
     """检查 ADB 和 scrcpy 依赖，返回 (adb_ok, adb_path, scrcpy_ok, scrcpy_path)"""

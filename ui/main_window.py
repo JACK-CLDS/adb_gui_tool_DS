@@ -108,6 +108,8 @@ class MainWindow(QMainWindow):
         self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.device_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.device_table.doubleClicked.connect(self.on_device_double_clicked)
+        self.device_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.device_table.customContextMenuRequested.connect(self.show_device_menu)
         right_layout.addWidget(self.device_table)
 
         bottom_widget = QWidget()
@@ -230,6 +232,26 @@ class MainWindow(QMainWindow):
         self.refresh_history_tree()
         self.refresh_favorites_tree()
         return sidebar
+
+    def show_device_menu(self, position):
+        item = self.device_table.itemAt(position)
+        if not item:
+            return
+        row = item.row()
+        serial_item = self.device_table.item(row, 1)
+        if not serial_item:
+            return
+        serial = serial_item.text()
+        menu = QMenu()
+        disconnect_action = QAction("断开连接", self)
+        disconnect_action.triggered.connect(lambda: self.disconnect_device(serial))
+        menu.addAction(disconnect_action)
+        menu.exec_(self.device_table.viewport().mapToGlobal(position))
+
+    def disconnect_device(self, serial):
+        self.adb_client.disconnect_device(serial, callback=lambda success, msg: self.log_message(f"断开: {msg}"))
+        # 刷新设备列表
+        self.device_manager.manual_refresh()
 
     def show_history_menu(self, position):
         item = self.history_tree.itemAt(position)
