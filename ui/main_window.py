@@ -219,6 +219,7 @@ class MainWindow(QMainWindow):
         self.history_tree.setMaximumHeight(200)
         self.history_tree.itemDoubleClicked.connect(self.on_history_item_clicked)
         layout.addWidget(self.history_tree)
+        self.history_tree.setContextMenuPolicy(Qt.CustomContextMenu)
 
         self.favorites_tree = QTreeWidget()
         self.favorites_tree.setHeaderLabel("收藏设备")
@@ -243,10 +244,26 @@ class MainWindow(QMainWindow):
             return
         serial = serial_item.text()
         menu = QMenu()
+        alias_action = QAction("设置别名", self)
+        alias_action.triggered.connect(lambda: self.set_device_alias(serial))
         disconnect_action = QAction("断开连接", self)
         disconnect_action.triggered.connect(lambda: self.disconnect_device(serial))
+        menu.addAction(alias_action)
         menu.addAction(disconnect_action)
         menu.exec_(self.device_table.viewport().mapToGlobal(position))
+
+    def set_device_alias(self, serial):
+        from utils.config_manager import ConfigManager
+        current_aliases = ConfigManager.get_device_aliases()
+        current_alias = current_aliases.get(serial, "")
+        alias, ok = QInputDialog.getText(self, "设置设备别名", "请输入别名（留空则清除）:", text=current_alias)
+        if ok:
+            ConfigManager.set_device_alias(serial, alias.strip())
+            # 刷新所有相关界面
+            self.device_manager.manual_refresh()      # 刷新设备列表
+            self.refresh_history_tree()               # 刷新历史记录
+            self.refresh_favorites_tree()             # 刷新收藏（如果收藏也显示别名）
+            self.log_message(f"设备 {serial} 别名已更新为: {alias or '无'}")
 
     def disconnect_device(self, serial):
         self.adb_client.disconnect_device(serial, callback=lambda success, msg: self.log_message(f"断开: {msg}"))
@@ -263,19 +280,37 @@ class MainWindow(QMainWindow):
         menu.addAction(delete_action)
         menu.exec_(self.history_tree.viewport().mapToGlobal(position))
 
+    #    def delete_history_item(self, item):
+    #        addr = item.text(0)
+    #        history = ConfigManager.get_history()
+    #        if addr in history:
+    #            history.remove(addr)
+    #            ConfigManager._write_json_file(HISTORY_FILE, history)  # 注意：需要导入 HISTORY_FILE 或使用 ConfigManager 的方法
+    #            self.refresh_history_tree()
+    #            self.log_message(f"已从历史记录中删除: {addr}")
+
     def delete_history_item(self, item):
         addr = item.text(0)
-        history = ConfigManager.get_history()
-        if addr in history:
-            history.remove(addr)
-            ConfigManager._write_json_file(HISTORY_FILE, history)  # 注意：需要导入 HISTORY_FILE 或使用 ConfigManager 的方法
+        if ConfigManager.remove_history(addr):
             self.refresh_history_tree()
             self.log_message(f"已从历史记录中删除: {addr}")
 
     def refresh_history_tree(self):
         self.history_tree.clear()
+        from utils.config_manager import ConfigManager
+        aliases = ConfigManager.get_device_aliases()
         for addr in ConfigManager.get_history():
-            self.history_tree.addTopLevelItem(QTreeWidgetItem([addr]))
+            # 尝试匹配别名：如果原始地址没有端口，尝试加上 :5555
+            alias = aliases.get(addr, "")
+            if not alias and ":" not in addr:
+                alias = aliases.get(f"{addr}:5555", "")
+            if alias:
+                display_text = f"{alias} ({addr})"
+            else:
+                display_text = addr
+            item = QTreeWidgetItem([display_text])
+            item.setData(0, Qt.UserRole, addr)
+            self.history_tree.addTopLevelItem(item)
 
     def refresh_favorites_tree(self):
         self.favorites_tree.clear()
@@ -287,28 +322,10 @@ class MainWindow(QMainWindow):
                 group_item.addChild(QTreeWidgetItem([dev]))
 
     def on_history_item_clicked(self, item, col):
-        self.address_input.setText(item.text(0))
-        self.connect_to_address()
-
-    def show_device_menu(self, position):
-        item = self.device_table.itemAt(position)
-        if not item:
-            return
-        row = item.row()
-        serial_item = self.device_table.item(row, 1)
-        if not serial_item:
-            return
-        serial = serial_item.text()
-        menu = QMenu()
-        disconnect_action = QAction("断开连接", self)
-        disconnect_action.triggered.connect(lambda: self.disconnect_device(serial))
-        menu.addAction(disconnect_action)
-        menu.exec_(self.device_table.viewport().mapToGlobal(position))
-
-    def disconnect_device(self, serial):
-        self.adb_client.disconnect_device(serial, callback=lambda success, msg: self.log_message(f"断开连接: {msg}"))
-        # 刷新设备列表
-        self.device_manager.manual_refresh()
+        addr = item.data(0, Qt.UserRole)
+        if addr:
+            self.address_input.setText(addr)
+            self.connect_to_address()
 
     def on_favorite_item_clicked(self, item, col):
         if item.parent() is not None:
@@ -515,9 +532,12 @@ class MainWindow(QMainWindow):
         """
         if not self.device_manager:
             return
+        from utils.config_manager import ConfigManager
+        aliases = ConfigManager.get_device_aliases()
         self.device_table.setRowCount(len(devices))
         for row, (serial, state, name) in enumerate(devices):
-            name_item = QTableWidgetItem(name)
+            display_name = aliases.get(serial, name)
+            name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.UserRole, serial)
             self.device_table.setItem(row, 0, name_item)
             serial_item = QTableWidgetItem(serial)

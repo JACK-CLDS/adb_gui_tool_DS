@@ -40,6 +40,21 @@ class ConfigManager:
     """全局配置管理"""
 
     @staticmethod
+    def get_device_aliases() -> dict:
+        """获取所有设备别名，格式 {serial: alias, ...}"""
+        aliases_file = CONFIG_DIR / "device_aliases.json"
+        return ConfigManager._read_json_file(aliases_file, {})
+
+    @staticmethod
+    def set_device_alias(serial: str, alias: str) -> bool:
+        aliases = ConfigManager.get_device_aliases()
+        if alias:
+            aliases[serial] = alias
+        else:
+            aliases.pop(serial, None)
+        return ConfigManager._write_json_file(CONFIG_DIR / "device_aliases.json", aliases)
+
+    @staticmethod
     def _read_json_file(file_path: Path, default: Any = None) -> Any:
         """安全读取 JSON 文件，如果文件不存在或解析失败则返回默认值"""
         if not file_path.exists():

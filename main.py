@@ -5,6 +5,7 @@ main.py - ADB GUI Tool 程序入口
 
 import sys
 import traceback
+import os
 from pathlib import Path
 
 from PyQt5.QtWidgets import QApplication, QMessageBox
@@ -14,6 +15,7 @@ from utils.config_manager import ConfigManager
 from utils.system_utils import SystemUtils
 from core.adb_client import AdbClient
 from ui.main_window import MainWindow
+
 
 import platform
 if platform.system() == "Darwin":
