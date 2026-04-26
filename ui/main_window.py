@@ -299,12 +299,11 @@ class MainWindow(QMainWindow):
 
     def delete_history_item(self, item):
         addr = item.text(0)
-        history = ConfigManager.get_history()
-        if addr in history:
-            history.remove(addr)
-            ConfigManager._write_json_file(HISTORY_FILE, history)  # 注意需要导入 HISTORY_FILE
+        if ConfigManager.remove_history(addr):
             self.refresh_history_tree()
             self.log_message(f"已从历史记录中删除: {addr}")
+        else:
+            self.log_message(f"删除失败: {addr}")
 
     def refresh_history_tree(self):
         self.history_tree.clear()
