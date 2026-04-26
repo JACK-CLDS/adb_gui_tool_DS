@@ -71,6 +71,9 @@ class TerminalWidget(QWidget):
         else:
             self.input_line.setEnabled(True)
             self.reset_btn.setEnabled(True)
+            # 启动后更新提示符
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(500, self.update_prompt)
 
     def reset_terminal(self):
         """重置终端：杀死当前 shell 并重新启动"""
@@ -117,7 +120,19 @@ class TerminalWidget(QWidget):
         self.output.append("\n[Shell 进程已结束]")
         self.status_message.emit("shell 进程结束")
         self.input_line.setEnabled(False)
-        self.reset_btn.setEnabled(False)
+        #self.reset_btn.setEnabled(False)
+
+    def update_prompt(self):
+        """更新提示符为 $ 或 #（根据当前用户权限）"""
+        out = self.adb_client.shell_sync("id", self.serial, timeout=2)
+        if "uid=0" in out:
+            self.prompt_label.setText(f"{self.serial}: # ")
+        else:
+            self.prompt_label.setText(f"{self.serial}: $ ")
+
+    def refresh_prompt(self):
+        """外部调用刷新提示符（例如设备窗口提权成功后）"""
+        self.update_prompt()
 
     def eventFilter(self, obj, event):
         if obj == self.input_line and event.type() == QEvent.KeyPress:
