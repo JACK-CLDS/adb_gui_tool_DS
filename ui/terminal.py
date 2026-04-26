@@ -1,11 +1,7 @@
-"""
-ui/terminal.py - 交互式 Shell 终端控件（带重置功能）
-"""
-
+# ui/terminal.py - 稳健版（无提示符，信号驱动）
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QHBoxLayout, QLabel, QPushButton, QMessageBox
 from PyQt5.QtCore import QProcess, pyqtSignal, Qt, QEvent
 from PyQt5.QtGui import QFont, QTextCursor
-
 
 class TerminalWidget(QWidget):
     status_message = pyqtSignal(str)
@@ -31,22 +27,18 @@ class TerminalWidget(QWidget):
         layout.addWidget(self.output)
 
         input_layout = QHBoxLayout()
-        self.prompt_label = QLabel(f"{self.serial}: $ ")
-        self.prompt_label.setFont(QFont("Monospace", 10))
         self.input_line = QLineEdit()
         self.input_line.setFont(QFont("Monospace", 10))
+        self.input_line.setPlaceholderText("输入命令...")
         self.input_line.returnPressed.connect(self.send_command)
         self.input_line.installEventFilter(self)
-        input_layout.addWidget(self.prompt_label)
         input_layout.addWidget(self.input_line)
 
-        # 重置按钮（杀死当前 shell 并重启）
         self.reset_btn = QPushButton("重置终端")
-        self.reset_btn.setToolTip("杀死当前 shell 并重启，用于结束卡死的命令（如 top）")
+        self.reset_btn.setToolTip("杀死当前 shell 并重启")
         self.reset_btn.clicked.connect(self.reset_terminal)
         input_layout.addWidget(self.reset_btn)
 
-        # 提示标签
         hint_label = QLabel(" (Ctrl+C 无效，卡死时请点重置)")
         hint_label.setFont(QFont("Monospace", 9))
         hint_label.setStyleSheet("color: #888;")
@@ -55,28 +47,34 @@ class TerminalWidget(QWidget):
         layout.addLayout(input_layout)
 
     def start_shell(self):
+        # 清理旧进程
         if self.process and self.process.state() == QProcess.Running:
             self.process.kill()
             self.process.waitForFinished(1000)
+        # 创建新进程
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.on_output)
         self.process.finished.connect(self.on_finished)
+        self.process.started.connect(self.on_shell_started)
         self.process.start(self.adb_client.adb_path, ["-s", self.serial, "shell"])
-        if not self.process.waitForStarted(3000):
-            self.output.append("错误：无法启动 adb shell")
+        # 启动超时检测（5秒后如果没有启动信号，则视为失败）
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(5000, self._check_start_timeout)
+
+    def _check_start_timeout(self):
+        if self.process and self.process.state() != QProcess.Running:
+            self.output.append("错误：无法启动 adb shell (超时)")
             self.status_message.emit("无法启动 shell")
             self.input_line.setEnabled(False)
-            self.reset_btn.setEnabled(False)
-        else:
-            self.input_line.setEnabled(True)
-            self.reset_btn.setEnabled(True)
-            # 启动后更新提示符
-            from PyQt5.QtCore import QTimer
-            QTimer.singleShot(500, self.update_prompt)
+            self.reset_btn.setEnabled(True)  # 保留重置按钮
+
+    def on_shell_started(self):
+        self.input_line.setEnabled(True)
+        self.reset_btn.setEnabled(True)
+        self.output.append("Shell 已启动")
 
     def reset_terminal(self):
-        """重置终端：杀死当前 shell 并重新启动"""
         reply = QMessageBox.question(self, "确认重置", "重置终端将终止当前所有运行中的命令，是否继续？",
                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
@@ -87,17 +85,12 @@ class TerminalWidget(QWidget):
         cmd = self.input_line.text().strip()
         if not cmd:
             return
-
-        # 本地清屏
         if cmd in ("clear", "cls"):
             self.output.clear()
             self.input_line.clear()
             return
-
-        # 提示 top 命令
         if cmd == "top":
             QMessageBox.information(self, "提示", "top 命令会持续刷新，可使用「重置终端」按钮退出。")
-
         self.history.append(cmd)
         self.history_index = len(self.history)
         self.input_line.clear()
@@ -120,27 +113,13 @@ class TerminalWidget(QWidget):
         self.output.append("\n[Shell 进程已结束]")
         self.status_message.emit("shell 进程结束")
         self.input_line.setEnabled(False)
-        #self.reset_btn.setEnabled(False)
-
-    def update_prompt(self):
-        """更新提示符为 $ 或 #（根据当前用户权限）"""
-        out = self.adb_client.shell_sync("id", self.serial, timeout=2)
-        if "uid=0" in out:
-            self.prompt_label.setText(f"{self.serial}: # ")
-        else:
-            self.prompt_label.setText(f"{self.serial}: $ ")
-
-    def refresh_prompt(self):
-        """外部调用刷新提示符（例如设备窗口提权成功后）"""
-        self.update_prompt()
+        # 重置按钮保持可用，用户可再次点击重置
 
     def eventFilter(self, obj, event):
         if obj == self.input_line and event.type() == QEvent.KeyPress:
-            # 禁用 Ctrl+C 的实际功能，仅显示提示
             if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
                 self.status_message.emit("请使用「重置终端」按钮来停止卡死的命令")
                 return True
-            # 上下键历史
             if event.key() == Qt.Key_Up:
                 if self.history_index > 0:
                     self.history_index -= 1
