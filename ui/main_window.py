@@ -190,6 +190,7 @@ class MainWindow(QMainWindow):
         self.log_dock.setWidget(self.log_text)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
         self.log_dock.show()
+        self.statusBar().showMessage("就绪")
 
     def apply_stylesheet(self):
         self.setStyleSheet("""
@@ -220,6 +221,7 @@ class MainWindow(QMainWindow):
         self.history_tree.itemDoubleClicked.connect(self.on_history_item_clicked)
         layout.addWidget(self.history_tree)
         self.history_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.history_tree.customContextMenuRequested.connect(self.show_history_menu)
 
         self.favorites_tree = QTreeWidget()
         self.favorites_tree.setHeaderLabel("收藏设备")
@@ -289,9 +291,18 @@ class MainWindow(QMainWindow):
     #            self.refresh_history_tree()
     #            self.log_message(f"已从历史记录中删除: {addr}")
 
+    #    def delete_history_item(self, item):
+    #        addr = item.text(0)
+    #        if ConfigManager.remove_history(addr):
+    #            self.refresh_history_tree()
+    #            self.log_message(f"已从历史记录中删除: {addr}")
+
     def delete_history_item(self, item):
         addr = item.text(0)
-        if ConfigManager.remove_history(addr):
+        history = ConfigManager.get_history()
+        if addr in history:
+            history.remove(addr)
+            ConfigManager._write_json_file(HISTORY_FILE, history)  # 注意需要导入 HISTORY_FILE
             self.refresh_history_tree()
             self.log_message(f"已从历史记录中删除: {addr}")
 
@@ -409,6 +420,7 @@ class MainWindow(QMainWindow):
             self.log_message(f"连接失败: {message}")
             # 显示详细错误对话框
             QMessageBox.critical(self, "连接失败", f"错误详情:\n{message}\n\n请检查设备是否开启网络调试，或尝试在命令行中手动连接。")
+        self.statusBar().showMessage("就绪")
 
     def restart_adb_server(self):
         if not self.adb_client:
@@ -437,6 +449,7 @@ class MainWindow(QMainWindow):
                 self.device_manager.manual_refresh()
         else:
             self.log_message("ADB 启动失败")
+        self.statusBar().showMessage("就绪")
 
     def kill_adb_server(self):
         if not self.adb_client:
@@ -452,6 +465,7 @@ class MainWindow(QMainWindow):
         for _, win in self.device_windows:
             win.close()
         self.device_windows.clear()
+        self.statusBar().showMessage("就绪")
 
     def on_device_double_clicked(self, index):
         if not self.device_manager:
@@ -480,6 +494,7 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self)
         if dlg.exec_():
             QMessageBox.information(self, "提示", "ADB 路径已修改，请重启程序生效。")
+        self.statusBar().showMessage("就绪")
 
     def open_about_dialog(self):
         dialog = QDialog(self)
@@ -500,6 +515,7 @@ class MainWindow(QMainWindow):
         btn.clicked.connect(dialog.accept)
         layout.addWidget(btn)
         dialog.exec_()
+        self.statusBar().showMessage("就绪")
 
     def log_message(self, msg):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -553,3 +569,4 @@ class MainWindow(QMainWindow):
         
         # 默认按设备名称列升序排序
         self.device_table.sortByColumn(0, Qt.AscendingOrder)
+        self.statusBar().showMessage("就绪")

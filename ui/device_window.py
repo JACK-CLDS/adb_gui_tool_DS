@@ -269,6 +269,7 @@ class DeviceWindow(QMainWindow):
         # 延迟 10ms 执行下一个任务，让 UI 有机会刷新
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(10, self._run_next_task)
+        self.status_label.setText("就绪")
 
 
     def _parse_battery(self, output: str):
@@ -514,6 +515,7 @@ class DeviceWindow(QMainWindow):
         else:
             self.status_label.setText("截图失败")
             QMessageBox.warning(self, "错误", "截图失败，请确保设备已解锁且支持 screencap 命令。")
+        self.status_label.setText("就绪")
 
     def start_recording(self):
         from PyQt5.QtWidgets import QFileDialog
@@ -764,6 +766,7 @@ class DeviceWindow(QMainWindow):
         else:
             self.status_label.setText(f"{mode_text}失败")
             QMessageBox.warning(self, "错误", f"{mode_text}失败，请检查设备连接。")
+        self.status_label.setText("就绪")
 
     def shutdown_device(self):
         reply = QMessageBox.question(self, "确认操作", f"确定要关闭设备 {self.serial} 吗？",
@@ -779,6 +782,7 @@ class DeviceWindow(QMainWindow):
         else:
             self.status_label.setText("关机失败")
             QMessageBox.warning(self, "错误", "关机失败，请检查设备权限。")
+        self.status_label.setText("就绪")
 
     def closeEvent(self, event):
         self.closed.emit(self.serial)
@@ -843,6 +847,7 @@ class DeviceWindow(QMainWindow):
         """adb root 命令执行完成，开始轮询检查是否真正成为 root"""
         self.status_label.setText("提权命令已发送，等待设备重新连接...")
         QTimer.singleShot(1000, lambda: self._check_root_status(0))
+        self.status_label.setText("就绪")
 
     def _check_root_status(self, retry):
         """检查设备是否已处于 root 状态，最多重试 10 次"""
@@ -869,6 +874,7 @@ class DeviceWindow(QMainWindow):
     def _on_unroot_command_finished(self, exit_code, exit_status):
         self.status_label.setText("解提权命令已发送，等待设备重新连接...")
         QTimer.singleShot(1000, lambda: self._check_unroot_status(0))
+        self.status_label.setText("就绪")
 
     def _check_unroot_status(self, retry):
         if retry >= 10:
