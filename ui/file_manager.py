@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QPushButton, QToolBar, QAction, QFileDialog,
     QMessageBox, QInputDialog, QProgressDialog, QMenu, QLabel
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QIcon
 
 from core.adb_client import AdbClient
@@ -113,6 +113,7 @@ class FileManager(QWidget):
         self.file_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_table.customContextMenuRequested.connect(self.show_file_context_menu)
         self.file_table.itemDoubleClicked.connect(self.on_file_double_clicked)
+        self.file_table.installEventFilter(self)
         #        self.file_table = QTableWidget()
         #        self.file_table.setColumnCount(4)
         #        self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
@@ -255,6 +256,18 @@ class FileManager(QWidget):
         files.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
         print(f"[FileManager] Parsed {len(files)} files/directories")
         return files
+
+    def eventFilter(self, obj, event):
+        if obj == self.file_table and event.type() == QEvent.KeyPress:
+            key = event.text()
+            if key and key.isprintable() and len(key) == 1:
+                letter = key.lower()
+                for row, item in enumerate(self.file_list):
+                    if item["name"].lower().startswith(letter):
+                        self.file_table.selectRow(row)
+                        self.file_table.scrollToItem(self.file_table.item(row, 0))
+                        return True
+        return super().eventFilter(obj, event)
 
     def populate_file_table(self):
         print(f"[FileManager] Populating table with {len(self.file_list)} items")
