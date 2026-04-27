@@ -77,7 +77,7 @@ class FileManager(QWidget):
 
         layout.addWidget(toolbar)
 
-        # 地址栏
+        # 地址栏和统计标签行
         address_layout = QHBoxLayout()
         self.address_bar = QLineEdit()
         self.address_bar.returnPressed.connect(self.go_to_address)
@@ -86,7 +86,15 @@ class FileManager(QWidget):
         address_layout.addWidget(QLabel("路径:"))
         address_layout.addWidget(self.address_bar)
         address_layout.addWidget(self.go_btn)
+        # 弹性空间，将统计标签推到右侧
+        address_layout.addStretch()
+        self.stats_label = QLabel()
+        self.stats_label.setAlignment(Qt.AlignRight)
+        self.stats_label.setMinimumWidth(200)  # 防止标签宽度不够导致换行
+        address_layout.addWidget(self.stats_label)
         layout.addLayout(address_layout)
+        
+        self.stats_label.setFixedHeight(30)
 
         # 分割器
         splitter = QSplitter(Qt.Horizontal)
@@ -95,6 +103,10 @@ class FileManager(QWidget):
         self.dir_tree.setIndentation(10)
         self.dir_tree.itemDoubleClicked.connect(self.on_tree_item_double_clicked)
         splitter.addWidget(self.dir_tree)
+
+        #        self.stats_label = QLabel()
+        #        self.stats_label.setAlignment(Qt.AlignRight)
+        #        layout.addWidget(self.stats_label)
 
         self.file_table = QTableWidget()
         self.file_table.setColumnCount(4)
@@ -176,9 +188,17 @@ class FileManager(QWidget):
         print(f"[FileManager] ls -la {path} returned {len(out)} bytes")
         
         self.file_list = self._parse_ls_output(out)
+        
+        dir_count = sum(1 for item in self.file_list if item["is_dir"])
+        file_count = len(self.file_list) - dir_count
+        self.status_message.emit(f"{self.current_path} - {dir_count} 个文件夹, {file_count} 个文件")
+        
         self.populate_file_table()
         self.status_message.emit(f"已加载 {len(self.file_list)} 个项目")
         self.update_dir_tree()
+        dir_count = sum(1 for item in self.file_list if item["is_dir"])
+        file_count = len(self.file_list) - dir_count
+        self.stats_label.setText(f"{dir_count} 个文件夹, {file_count} 个文件")
 
     def _parse_ls_output(self, output: str) -> List[Dict]:
         """解析 ls -la 输出，支持两种日期格式（月日 时:分 或 YYYY-MM-DD HH:MM）"""

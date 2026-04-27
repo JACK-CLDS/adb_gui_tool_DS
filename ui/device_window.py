@@ -1101,14 +1101,16 @@ class DeviceWindow(QMainWindow):
         """显示分区挂载信息"""
         self.status_label.setText("正在获取分区挂载信息...")
         out = self.adb_client.shell_sync("cat /proc/mounts", self.serial)
-        # 创建对话框显示
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        from PyQt5.QtGui import QFontDatabase
         dialog = QDialog(self)
         dialog.setWindowTitle("分区挂载信息")
         layout = QVBoxLayout(dialog)
         text_edit = QTextEdit()
         text_edit.setPlainText(out)
-        text_edit.setFont(QFont("Monospace", 10))
+        # 使用系统等宽字体
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        text_edit.setFont(fixed_font)
         layout.addWidget(text_edit)
         btn = QPushButton("关闭")
         btn.clicked.connect(dialog.accept)

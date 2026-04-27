@@ -120,7 +120,8 @@ class LogcatTab(QWidget):
         # 日志显示区域
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
-        font = QFont("Monospace")
+        from PyQt5.QtGui import QFontDatabase
+        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.log_text.setFont(font)
         layout.addWidget(self.log_text)
 

@@ -1,7 +1,6 @@
-# ui/terminal.py - 稳健版（无提示符，信号驱动）
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QHBoxLayout, QLabel, QPushButton, QMessageBox
 from PyQt5.QtCore import QProcess, pyqtSignal, Qt, QEvent
-from PyQt5.QtGui import QFont, QTextCursor
+from PyQt5.QtGui import QFont, QTextCursor, QFontDatabase
 
 class TerminalWidget(QWidget):
     status_message = pyqtSignal(str)
@@ -22,13 +21,11 @@ class TerminalWidget(QWidget):
 
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setFont(QFont("Monospace", 10))
         self.output.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4;")
         layout.addWidget(self.output)
 
         input_layout = QHBoxLayout()
         self.input_line = QLineEdit()
-        self.input_line.setFont(QFont("Monospace", 10))
         self.input_line.setPlaceholderText("输入命令...")
         self.input_line.returnPressed.connect(self.send_command)
         self.input_line.installEventFilter(self)
@@ -40,25 +37,26 @@ class TerminalWidget(QWidget):
         input_layout.addWidget(self.reset_btn)
 
         hint_label = QLabel(" (Ctrl+C 无效，卡死时请点重置)")
-        hint_label.setFont(QFont("Monospace", 9))
         hint_label.setStyleSheet("color: #888;")
         input_layout.addWidget(hint_label)
 
         layout.addLayout(input_layout)
 
+        # 在所有控件创建之后设置等宽字体
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        self.output.setFont(fixed_font)
+        self.input_line.setFont(fixed_font)
+
     def start_shell(self):
-        # 清理旧进程
         if self.process and self.process.state() == QProcess.Running:
             self.process.kill()
             self.process.waitForFinished(1000)
-        # 创建新进程
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self.on_output)
         self.process.finished.connect(self.on_finished)
         self.process.started.connect(self.on_shell_started)
         self.process.start(self.adb_client.adb_path, ["-s", self.serial, "shell"])
-        # 启动超时检测（5秒后如果没有启动信号，则视为失败）
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(5000, self._check_start_timeout)
 
@@ -67,7 +65,7 @@ class TerminalWidget(QWidget):
             self.output.append("错误：无法启动 adb shell (超时)")
             self.status_message.emit("无法启动 shell")
             self.input_line.setEnabled(False)
-            self.reset_btn.setEnabled(True)  # 保留重置按钮
+            self.reset_btn.setEnabled(True)
 
     def on_shell_started(self):
         self.input_line.setEnabled(True)
@@ -113,7 +111,6 @@ class TerminalWidget(QWidget):
         self.output.append("\n[Shell 进程已结束]")
         self.status_message.emit("shell 进程结束")
         self.input_line.setEnabled(False)
-        # 重置按钮保持可用，用户可再次点击重置
 
     def eventFilter(self, obj, event):
         if obj == self.input_line and event.type() == QEvent.KeyPress:
