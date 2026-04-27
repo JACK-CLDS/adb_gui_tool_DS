@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QGridLayout, QFileDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QProcess
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QFont
 
 from core.adb_client import AdbClient
 from utils.config_manager import ConfigManager
