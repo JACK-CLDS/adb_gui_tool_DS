@@ -511,9 +511,7 @@ class MainWindow(QMainWindow):
     def open_settings_dialog(self, force=False):
         from ui.settings_dialog import SettingsDialog
         dlg = SettingsDialog(self)
-        if dlg.exec_():
-            QMessageBox.information(self, "提示", "ADB 路径已修改，请重启程序生效。")
-        self.statusBar().showMessage("就绪")
+        dlg.exec_()   # 不再显示额外提示，因为 settings_dialog 内部已处理
 
     def open_about_dialog(self):
         dialog = QDialog(self)
