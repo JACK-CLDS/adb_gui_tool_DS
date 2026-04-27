@@ -248,3 +248,11 @@ class ConfigManager:
         prefs = ConfigManager.get_device_preferences(serial)
         prefs[key] = value
         return ConfigManager.save_device_preferences(serial, prefs)
+
+    @staticmethod
+    def get_device_order() -> list:
+        return ConfigManager._read_json_file(CONFIG_DIR / "device_order.json", [])
+
+    @staticmethod
+    def set_device_order(order: list) -> bool:
+        return ConfigManager._write_json_file(CONFIG_DIR / "device_order.json", order)

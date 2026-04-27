@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QMenu, QMessageBox, QInputDialog,
     QAbstractItemView, QApplication, QDialog, QTextBrowser, QLabel
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QProcess
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QProcess, QEvent
 from PyQt5.QtGui import QIcon
 
 from core.adb_client import AdbClient
@@ -111,6 +111,26 @@ class MainWindow(QMainWindow):
         self.device_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.device_table.customContextMenuRequested.connect(self.show_device_menu)
         right_layout.addWidget(self.device_table)
+
+        # 启用拖拽排序
+        self.device_table.setDragEnabled(True)
+        self.device_table.setAcceptDrops(True)
+        self.device_table.setDragDropMode(QAbstractItemView.InternalMove)
+        self.device_table.setDropIndicatorShown(True)
+        
+        # 事件过滤
+        self.device_table.viewport().installEventFilter(self)
+
+        # 上下移动按钮条
+        move_layout = QHBoxLayout()
+        self.move_up_btn = QPushButton("上移")
+        self.move_up_btn.clicked.connect(self.move_device_up)
+        self.move_down_btn = QPushButton("下移")
+        self.move_down_btn.clicked.connect(self.move_device_down)
+        move_layout.addWidget(self.move_up_btn)
+        move_layout.addWidget(self.move_down_btn)
+        move_layout.addStretch()
+        right_layout.addLayout(move_layout)
 
         bottom_widget = QWidget()
         bottom_layout = QHBoxLayout(bottom_widget)
@@ -541,22 +561,25 @@ class MainWindow(QMainWindow):
         pass
 
     def update_device_table(self, devices: List[tuple]):
-        """
-        更新设备表格
-        devices: [(serial, state, device_name), ...]
-        """
         if not self.device_manager:
             return
-        from utils.config_manager import ConfigManager
+        # 获取顺序
+        order = ConfigManager.get_device_order()
+        device_dict = {serial: (serial, state, name) for serial, state, name in devices}
+        ordered = []
+        for serial in order:
+            if serial in device_dict:
+                ordered.append(device_dict.pop(serial))
+        ordered.extend(device_dict.values())
+        # 填充表格
         aliases = ConfigManager.get_device_aliases()
-        self.device_table.setRowCount(len(devices))
-        for row, (serial, state, name) in enumerate(devices):
+        self.device_table.setRowCount(len(ordered))
+        for row, (serial, state, name) in enumerate(ordered):
             display_name = aliases.get(serial, name)
             name_item = QTableWidgetItem(display_name)
             name_item.setData(Qt.UserRole, serial)
             self.device_table.setItem(row, 0, name_item)
-            serial_item = QTableWidgetItem(serial)
-            self.device_table.setItem(row, 1, serial_item)
+            self.device_table.setItem(row, 1, QTableWidgetItem(serial))
             state_item = QTableWidgetItem(state)
             if state == "device":
                 state_item.setForeground(Qt.darkGreen)
@@ -565,7 +588,42 @@ class MainWindow(QMainWindow):
             elif state == "unauthorized":
                 state_item.setForeground(Qt.red)
             self.device_table.setItem(row, 2, state_item)
-        
-        # 默认按设备名称列升序排序
-        self.device_table.sortByColumn(0, Qt.AscendingOrder)
         self.statusBar().showMessage("就绪")
+
+    def move_device_up(self):
+        current_row = self.device_table.currentRow()
+        if current_row <= 0:
+            return
+        self.swap_rows(current_row, current_row - 1)
+        self.device_table.selectRow(current_row - 1)
+        self.save_device_order()
+
+    def move_device_down(self):
+        current_row = self.device_table.currentRow()
+        if current_row < 0 or current_row >= self.device_table.rowCount() - 1:
+            return
+        self.swap_rows(current_row, current_row + 1)
+        self.device_table.selectRow(current_row + 1)
+        self.save_device_order()
+
+    def swap_rows(self, row1, row2):
+        for col in range(self.device_table.columnCount()):
+            item1 = self.device_table.takeItem(row1, col)
+            item2 = self.device_table.takeItem(row2, col)
+            self.device_table.setItem(row1, col, item2)
+            self.device_table.setItem(row2, col, item1)
+
+    def save_device_order(self):
+        order = []
+        for row in range(self.device_table.rowCount()):
+            serial_item = self.device_table.item(row, 1)
+            if serial_item:
+                order.append(serial_item.text())
+        ConfigManager.set_device_order(order)
+
+    def eventFilter(self, obj, event):
+        if obj == self.device_table.viewport() and event.type() == QEvent.Drop:
+            # 拖拽完成后保存顺序（延迟一点确保表格已更新）
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(10, self.save_device_order)
+        return super().eventFilter(obj, event)
