@@ -73,10 +73,13 @@ class ProcessManager(QWidget):
         layout.addWidget(self.table)
 
     def load_processes(self):
-        """同步加载进程列表（使用 ps -A）"""
         self.status_message.emit("正在获取进程列表...")
-        out = self.adb_client.shell_sync("ps -A -o PID,NAME,RSS,STAT", self.serial, timeout=5)
-        self.processes = self._parse_ps_output(out)
+        # 使用最基础的 ps 命令，兼容所有 Android 版本
+        out = self.adb_client.shell_sync("ps", self.serial, timeout=5)
+        print(f"[DEBUG] ps raw output length: {len(out)}")
+        print(f"[DEBUG] ps raw output first 500 chars:\n{out[:500]}")
+        self.processes = self._parse_ps_output_old(out)
+        print(f"[DEBUG] Parsed {len(self.processes)} processes")
         self.filter_processes()
 
     def _parse_ps_output(self, output: str) -> List[Dict]:
@@ -212,3 +215,41 @@ class ProcessManager(QWidget):
     def closeEvent(self, event):
         self.refresh_timer.stop()
         event.accept()
+
+    def _parse_ps_output_new(self, output: str) -> List[Dict]:
+        """解析新版 ps 输出（有 -o 选项）"""
+        processes = []
+        lines = output.splitlines()
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 4:
+                processes.append({
+                    "pid": parts[0],
+                    "name": parts[1],
+                    "memory": parts[2],
+                    "state": parts[3],
+                    "raw_memory": parts[2]
+                })
+        return processes
+
+    def _parse_ps_output_old(self, output: str) -> List[Dict]:
+        """解析旧版 ps 输出（Android 7 及以下）"""
+        processes = []
+        lines = output.splitlines()
+        # 跳过标题行，找到数据行
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) >= 9:
+                # 旧格式：USER PID PPID VSZ RSS WCHAN ADDR S NAME
+                pid = parts[1]
+                rss = parts[4]  # RSS 列
+                state = parts[7]  # S 列
+                name = parts[8]  # NAME 列
+                processes.append({
+                    "pid": pid,
+                    "name": name,
+                    "memory": f"{rss} KB",
+                    "state": state,
+                    "raw_memory": rss
+                })
+        return processes
