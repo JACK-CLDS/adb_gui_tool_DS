@@ -91,6 +91,17 @@ class DeviceWindow(QMainWindow):
         screenshot_action.triggered.connect(self.take_screenshot)
         toolbar.addAction(screenshot_action)
 
+        # 飞行模式切换
+        self.airplane_action = QAction("飞行模式", self)
+        self.airplane_action.setCheckable(True)
+        self.airplane_action.triggered.connect(self.toggle_airplane_mode)
+        toolbar.addAction(self.airplane_action)
+
+        # 旋转屏幕
+        self.rotate_action = QAction("旋转屏幕", self)
+        self.rotate_action.triggered.connect(self.rotate_screen)
+        toolbar.addAction(self.rotate_action)
+
         # 录制按钮
         self.record_action = QAction("开始录制", self)
         self.record_action.triggered.connect(self.start_recording)
@@ -489,6 +500,31 @@ class DeviceWindow(QMainWindow):
         print(f"_on_props_loaded: output length {len(output)}")
         self.detail_text.setText(output)
         self.status_label.setText("设备信息已更新")
+
+    def toggle_airplane_mode(self, checked):
+        """切换飞行模式"""
+        if checked:
+            self.adb_client.shell_sync("settings put global airplane_mode_on 1", self.serial)
+            self.adb_client.shell_sync("am broadcast -a android.intent.action.AIRPLANE_MODE", self.serial)
+            self.status_label.setText("飞行模式已开启")
+        else:
+            self.adb_client.shell_sync("settings put global airplane_mode_on 0", self.serial)
+            self.adb_client.shell_sync("am broadcast -a android.intent.action.AIRPLANE_MODE", self.serial)
+            self.status_label.setText("飞行模式已关闭")
+        # 刷新按钮状态（可选）
+        self.airplane_action.setChecked(checked)
+
+    def rotate_screen(self):
+        """旋转屏幕（0, 90, 180, 270）轮换"""
+        # 获取当前旋转角度
+        out = self.adb_client.shell_sync("settings get system user_rotation", self.serial)
+        try:
+            current = int(out.strip())
+        except:
+            current = 0
+        next_rotation = (current + 90) % 360
+        self.adb_client.shell_sync(f"settings put system user_rotation {next_rotation//90}", self.serial)
+        self.status_label.setText(f"屏幕旋转至 {next_rotation}°")
 
     def take_screenshot(self):
         default_name = f"screenshot_{self.serial}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
