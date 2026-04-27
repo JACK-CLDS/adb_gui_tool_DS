@@ -135,6 +135,16 @@ class DeviceWindow(QMainWindow):
         unroot_action.triggered.connect(self.disable_root)
         toolbar.addAction(unroot_action)
 
+        # 重新挂载 system (需要root)
+        self.remount_action = QAction("重新挂载 system", self)
+        self.remount_action.triggered.connect(self.remount_system)
+        toolbar.addAction(self.remount_action)
+
+        # 查看分区挂载
+        self.mounts_action = QAction("查看分区挂载", self)
+        self.mounts_action.triggered.connect(self.show_mounts)
+        toolbar.addAction(self.mounts_action)
+
         toolbar.addSeparator()
 
         refresh_action = QAction("刷新信息", self)
@@ -1067,3 +1077,42 @@ class DeviceWindow(QMainWindow):
         from ui.soft_keyboard import SoftKeyboardWindow
         dlg = SoftKeyboardWindow(self.serial, self.adb_client, self)
         dlg.exec_()
+
+    def remount_system(self):
+        """重新挂载 /system 分区为可读写（需要 root）"""
+        # 检查是否有 root 权限
+        out = self.adb_client.shell_sync("id", self.serial)
+        if "uid=0" not in out:
+            reply = QMessageBox.question(self, "需要 root", "重新挂载 system 需要 root 权限，是否先提权？",
+                                         QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.enable_root()
+            return
+        self.status_label.setText("正在重新挂载 /system ...")
+        out = self.adb_client.shell_sync("mount -o remount,rw /system", self.serial)
+        if "remount succeeded" in out or "remounted" in out:
+            self.status_label.setText("重新挂载成功，/system 现在可读写")
+            QMessageBox.information(self, "成功", "/system 已重新挂载为可读写")
+        else:
+            self.status_label.setText("重新挂载失败")
+            QMessageBox.warning(self, "失败", f"重新挂载 /system 失败:\n{out}")
+
+    def show_mounts(self):
+        """显示分区挂载信息"""
+        self.status_label.setText("正在获取分区挂载信息...")
+        out = self.adb_client.shell_sync("cat /proc/mounts", self.serial)
+        # 创建对话框显示
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        dialog = QDialog(self)
+        dialog.setWindowTitle("分区挂载信息")
+        layout = QVBoxLayout(dialog)
+        text_edit = QTextEdit()
+        text_edit.setPlainText(out)
+        text_edit.setFont(QFont("Monospace", 10))
+        layout.addWidget(text_edit)
+        btn = QPushButton("关闭")
+        btn.clicked.connect(dialog.accept)
+        layout.addWidget(btn)
+        dialog.resize(800, 600)
+        dialog.exec_()
+        self.status_label.setText("就绪")
