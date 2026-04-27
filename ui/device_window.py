@@ -1,5 +1,5 @@
 """
-ui/device_window.py - 设备控制窗口（调试版）
+ui/device_window.py - 设备控制窗口
 """
 
 import sys

@@ -14,6 +14,7 @@ ui/apps_tab.py - 应用管理控件
 
 import re
 import os
+import subprocess
 from typing import List, Dict, Optional
 
 from PyQt5.QtWidgets import QStyle
@@ -166,27 +167,6 @@ class AppsTab(QWidget):
             })
         return packages
 
-#    def _on_user_packages_loaded(self, output: str):
-#        """处理用户应用包名列表"""
-#        packages = self._parse_packages(output)
-#        self.user_apps = packages
-#        self.populate_table(self.user_table, packages, "user")
-#        self._check_all_loaded()
-
-#    def _on_system_packages_loaded(self, output: str):
-#        """处理系统应用包名列表"""
-#        packages = self._parse_packages(output)
-#        self.system_apps = packages
-#        self.populate_table(self.system_table, packages, "system")
-#        self._check_all_loaded()
-
-    #这个应该也是不用了，先放这
-    def _check_all_loaded(self):
-        """检查两个列表是否都加载完成，恢复刷新按钮"""
-        if self.user_apps is not None and self.system_apps is not None:
-            self.refresh_btn.setEnabled(True)
-            self.refresh_btn.setText("刷新")
-
     def _parse_packages(self, output: str) -> List[Dict]:
         """解析 pm list packages 输出，返回包名列表（字典格式）"""
         packages = []
@@ -211,23 +191,6 @@ class AppsTab(QWidget):
 
     def populate_table(self, table: QTableWidget, apps: List[Dict], app_type: str):
         filtered_apps = self.filter_apps(apps)
-        #legacy way
-#        table.setRowCount(len(filtered_apps))
-#        for row, app in enumerate(filtered_apps):
-#            # 应用名称（带占位图标）
-#            name_item = QTableWidgetItem(app.get("name", ""))
-#            # 设置一个默认图标（可选）
-#            icon = self.style().standardIcon(QStyle.SP_FileIcon)
-#            name_item.setIcon(icon)
-#            name_item.setData(Qt.UserRole, app["package"])
-#            table.setItem(row, 0, name_item)
-#            table.setItem(row, 1, QTableWidgetItem(app["package"]))
-##            table.setItem(row, 2, QTableWidgetItem(app.get("version_name", "")))
-##            table.setItem(row, 3, QTableWidgetItem(str(app.get("version_code", ""))))
-##            table.setItem(row, 4, QTableWidgetItem(app.get("install_time", "")))
-#            # 默认按应用名称列（第0列）升序排序
-#            table.sortByColumn(0, Qt.AscendingOrder)
-        
         # 手动按应用名称（不区分大小写）排序
         filtered_apps.sort(key=lambda x: x.get("name", "").lower())
         table.setRowCount(len(filtered_apps))
@@ -238,8 +201,6 @@ class AppsTab(QWidget):
             name_item.setData(Qt.UserRole, app["package"])
             table.setItem(row, 0, name_item)
             table.setItem(row, 1, QTableWidgetItem(app["package"]))
-        # 注意：不再调用 table.sortByColumn
-
 
     def filter_apps(self, apps: List[Dict]) -> List[Dict]:
         """根据搜索文本过滤应用列表（名称或包名匹配）"""
@@ -326,7 +287,8 @@ class AppsTab(QWidget):
                                      QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
             for pkg in packages:
-                self.adb_client.uninstall(pkg, self.serial, callback=self._on_uninstall_finished)
+                self.adb_client.uninstall(pkg, self.serial,
+                                          callback=lambda code, out, err, p=pkg: self._on_uninstall_finished(code, out, err, p))
 
     def _on_uninstall_finished(self, exit_code, stdout, stderr, pkg=None):
         if exit_code == 0:
@@ -373,17 +335,6 @@ class AppsTab(QWidget):
                                      callback=lambda code, out, err, p=pkg, l=local_path: self._on_export_finished(code, out, err, p, l))
             else:
                 QMessageBox.warning(self, "导出失败", f"无法获取 {pkg} 的APK路径，输出：{out}")
-
-    def _on_apk_path_loaded(self, exit_code, stdout, stderr, pkg, save_dir):
-        if exit_code == 0 and stdout.startswith("package:"):
-            apk_path = stdout[8:].strip()
-            # 拉取APK文件
-            local_filename = f"{pkg}.apk"
-            local_path = f"{save_dir}/{local_filename}"
-            self.adb_client.pull(apk_path, local_path, self.serial,
-                                 callback=lambda code, out, err, p=pkg, l=local_path: self._on_export_finished(code, out, err, p, l))
-        else:
-            QMessageBox.warning(self, "导出失败", f"无法获取 {pkg} 的APK路径")
 
     def _on_export_finished(self, exit_code, stdout, stderr, pkg, local_path):
         if exit_code == 0:
@@ -462,27 +413,3 @@ class AppsTab(QWidget):
                 self.load_apps()  # 刷新应用列表
             else:
                 QMessageBox.warning(self, "安装失败", f"{filename} 安装失败\n{error_msg}")
-
-    def _install_next(self):
-        """安装队列中的下一个APK"""
-        if self._install_progress.wasCanceled():
-            self._install_progress.close()
-            return
-        if self._install_current_index >= len(self._install_queue):
-            self._install_progress.close()
-            QMessageBox.information(self, "安装完成", "所有APK安装完毕")
-            self.load_apps()  # 刷新应用列表
-            return
-        apk_path = self._install_queue[self._install_current_index]
-        self._install_progress.setLabelText(f"正在安装: {apk_path}")
-        self.adb_client.install(apk_path, self.serial,
-                                callback=lambda code, out, err: self._on_install_finished(code, out, err))
-
-    def _on_install_finished(self, exit_code, stdout, stderr):
-        if exit_code == 0:
-            self._install_current_index += 1
-            self._install_progress.setValue(self._install_current_index)
-            self._install_next()
-        else:
-            self._install_progress.close()
-            QMessageBox.warning(self, "安装失败", f"安装失败:\n{stderr}")

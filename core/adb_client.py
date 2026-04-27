@@ -2,11 +2,11 @@
 core/adb_client.py - ADB 命令异步执行封装（修正版）
 """
 
+import subprocess
 from pathlib import Path
 from typing import List, Optional, Callable
 from PyQt5.QtCore import QObject, QProcess, pyqtSignal
 
-import subprocess
 
 class AdbProcess(QObject):
     """单个 ADB 命令的异步执行器"""
@@ -111,7 +111,6 @@ class AdbClient(QObject):
         progress_callback: 接收百分比整数 (0-100)
         返回是否成功
         """
-        import subprocess
         import re
         args = [self.adb_path]
         if device_serial:
@@ -138,7 +137,6 @@ class AdbClient(QObject):
         """
         同步推送文件，实时解析进度并回调
         """
-        import subprocess
         import re
         args = [self.adb_path]
         if device_serial:
@@ -160,8 +158,6 @@ class AdbClient(QObject):
         process.wait()
         return process.returncode == 0
 
-    #dbg
-    import subprocess  # 确保文件顶部有导入
     def devices_sync(self, callback: Callable[[List[tuple]], None]):
         """同步版本的 devices 命令，用于调试"""
         result = subprocess.run([self.adb_path, 'devices'], capture_output=True, text=True)
@@ -200,20 +196,6 @@ class AdbClient(QObject):
             callback: Optional[Callable[[int, str, str], None]] = None):
         args = ["shell", command]
         self._exec(args, device_serial, callback=callback)
-
-#    def shell_sync(self, command: str, device_serial: Optional[str] = None) -> str:
-#        """同步执行 shell 命令，返回输出字符串（用于设备信息等一次性加载）"""
-#        args = [self.adb_path]
-#        if device_serial:
-#            args.extend(['-s', device_serial])
-#        args.extend(['shell', command])
-#        try:
-#            result = subprocess.run(args, capture_output=True, text=True, timeout=5)
-#            # 合并 stdout 和 stderr
-#            return result.stdout + result.stderr
-#        except Exception as e:
-#            print(f"shell_sync error: {e}")
-#            return ""
 
     def shell_sync(self, command: str, device_serial: Optional[str] = None, timeout: int = 5) -> str:
         args = [self.adb_path]
