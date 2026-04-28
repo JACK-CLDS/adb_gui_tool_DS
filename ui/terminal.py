@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QTextEdit, QLineEdit, QHBoxLayout, QLabel, QPushButton, QMessageBox
-from PyQt5.QtCore import QProcess, pyqtSignal, Qt, QEvent
+from PyQt5.QtCore import QProcess, pyqtSignal, Qt, QEvent, QTimer
 from PyQt5.QtGui import QFont, QTextCursor, QFontDatabase
 
 class TerminalWidget(QWidget):
@@ -13,7 +13,8 @@ class TerminalWidget(QWidget):
         self.history = []
         self.history_index = -1
         self.init_ui()
-        self.start_shell()
+        # 延迟启动 shell，避免阻塞窗口打开
+        QTimer.singleShot(50, self.start_shell)
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -57,7 +58,6 @@ class TerminalWidget(QWidget):
         self.process.finished.connect(self.on_finished)
         self.process.started.connect(self.on_shell_started)
         self.process.start(self.adb_client.adb_path, ["-s", self.serial, "shell"])
-        from PyQt5.QtCore import QTimer
         QTimer.singleShot(5000, self._check_start_timeout)
 
     def _check_start_timeout(self):

@@ -38,9 +38,9 @@ class DeviceWindow(QMainWindow):
         self.init_statusbar()
         self.load_device_info_async()
         self.status_message.connect(self.show_status_message)
-        self.load_device_info_async()
-        self.recording_process = None  # 录制进程
-        self.recording_file = None     # 录制文件路径
+        # 以下两个变量原在录制功能中，保留初始化
+        self.recording_process = None
+        self.recording_file = None
         self.recording_pid = None
 
     def init_ui(self):
@@ -50,18 +50,6 @@ class DeviceWindow(QMainWindow):
 
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
-        #uni style
-        #        self.tab_widget.setDocumentMode(True)
-        #        self.tab_widget.setStyleSheet("""
-        #            QTabBar::tab {
-        #                padding: 6px 12px;
-        #                margin: 2px;
-        #            }
-        #            QTabBar::tab:selected {
-        #                background: palette(highlight);
-        #                color: palette(highlighted-text);
-        #            }
-        #        """)
 
         self.info_tab = self.create_info_tab()
         self.tab_widget.addTab(self.info_tab, "设备信息")
@@ -72,8 +60,6 @@ class DeviceWindow(QMainWindow):
         self.file_tab = self.create_file_manager_tab()
         self.tab_widget.addTab(self.file_tab, "文件管理")
 
-        #        self.log_tab = self.create_placeholder_tab("日志查看\n(待实现)")
-        #        self.tab_widget.addTab(self.log_tab, "日志")
         self.log_tab = self.create_log_tab()
         self.tab_widget.addTab(self.log_tab, "日志")
 
@@ -148,11 +134,9 @@ class DeviceWindow(QMainWindow):
         toolbar.addSeparator()
 
         refresh_action = QAction("刷新信息", self)
-        #refresh_action.triggered.connect(self.load_device_info)
         refresh_action.triggered.connect(self.load_device_info_async)
         toolbar.addAction(refresh_action)
         
-        # 在 shutdown_action 后面或工具栏末尾添加
         toolbar.addSeparator()
         monkey_action = QAction("Monkey测试", self)
         monkey_action.triggered.connect(self.open_monkey_dialog)
@@ -197,7 +181,33 @@ class DeviceWindow(QMainWindow):
         info_group.setLayout(form_layout)
         layout.addWidget(info_group)
 
-        detail_group = QGroupBox("详细信息")
+        # 硬件与系统信息区域
+        hardware_group = QGroupBox("硬件与系统信息")
+        hw_layout = QFormLayout()
+        self.imei_label = QLabel("未知")
+        self.mac_label = QLabel("未知")
+        self.bluetooth_label = QLabel("未知")
+        self.network_label = QLabel("未知")
+        self.uptime_label = QLabel("未知")
+        self.cpu_label = QLabel("未知")
+        self.memory_label = QLabel("未知")
+        self.storage_label = QLabel("未知")
+        self.display_detail_label = QLabel("未知")
+
+        hw_layout.addRow("IMEI:", self.imei_label)
+        hw_layout.addRow("MAC 地址:", self.mac_label)
+        hw_layout.addRow("蓝牙地址:", self.bluetooth_label)
+        hw_layout.addRow("网络状态:", self.network_label)
+        hw_layout.addRow("开机时间:", self.uptime_label)
+        hw_layout.addRow("CPU 信息:", self.cpu_label)
+        hw_layout.addRow("内存信息:", self.memory_label)
+        hw_layout.addRow("存储信息:", self.storage_label)
+        hw_layout.addRow("显示屏详情:", self.display_detail_label)
+
+        hardware_group.setLayout(hw_layout)
+        layout.addWidget(hardware_group)
+
+        detail_group = QGroupBox("详细属性 (getprop)")
         detail_layout = QVBoxLayout()
         self.detail_text = QTextEdit()
         self.detail_text.setReadOnly(True)
@@ -205,15 +215,6 @@ class DeviceWindow(QMainWindow):
         detail_group.setLayout(detail_layout)
         layout.addWidget(detail_group)
 
-        return widget
-
-    def create_placeholder_tab(self, text: str) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("font-size: 20px; color: gray;")
-        layout.addWidget(label)
         return widget
 
     def create_apps_tab(self) -> QWidget:
@@ -224,6 +225,22 @@ class DeviceWindow(QMainWindow):
         from ui.file_manager import FileManager
         return FileManager(self.serial, self.adb_client, parent=self)
 
+    def create_log_tab(self) -> QWidget:
+        from ui.logcat_tab import LogcatTab
+        return LogcatTab(self.serial, self.adb_client)
+
+    def create_process_manager_tab(self) -> QWidget:
+        from ui.process_manager import ProcessManager
+        pm = ProcessManager(self.serial, self.adb_client)
+        pm.status_message.connect(self.show_status_message)
+        return pm
+
+    def create_terminal_tab(self) -> QWidget:
+        from ui.terminal import TerminalWidget
+        terminal = TerminalWidget(self.serial, self.adb_client)
+        terminal.status_message.connect(self.show_status_message)
+        return terminal
+
     def load_device_info_async(self):
         """异步加载设备信息，逐步更新UI，避免卡顿"""
         self.status_label.setText("正在获取设备信息...")
@@ -231,7 +248,6 @@ class DeviceWindow(QMainWindow):
             return
         self._loading = True
         
-        # 定义任务列表：每个任务包含 (描述, 获取函数, 更新UI的lambda)
         tasks = [
             ("设备型号", lambda: self.adb_client.shell_sync("getprop ro.product.model", self.serial, timeout=2),
              lambda val: self.model_label.setText(val.strip() or "未知")),
@@ -267,19 +283,14 @@ class DeviceWindow(QMainWindow):
         self._tasks = tasks
         self._run_next_task()
 
-    def create_log_tab(self) -> QWidget:
-        from ui.logcat_tab import LogcatTab
-        return LogcatTab(self.serial, self.adb_client)
-
     def _run_next_task(self):
         """执行下一个任务，使用 QTimer 避免阻塞"""
         if self._task_index >= len(self._tasks):
             self.status_label.setText("设备信息已更新")
+            self._loading = False
             return
         desc, func, update_ui = self._tasks[self._task_index]
         self.status_label.setText(f"正在获取 {desc}...")
-        # 在单独的线程中执行同步命令？为了简单，仍用同步但通过 QTimer 延迟执行
-        # 注意：同步命令仍会短暂阻塞，但每个命令很快，且 UI 会在间隙刷新
         try:
             result = func()
             update_ui(result)
@@ -287,11 +298,7 @@ class DeviceWindow(QMainWindow):
             print(f"获取 {desc} 失败: {e}")
             update_ui("获取失败")
         self._task_index += 1
-        # 延迟 10ms 执行下一个任务，让 UI 有机会刷新
-        from PyQt5.QtCore import QTimer
         QTimer.singleShot(10, self._run_next_task)
-        self.status_label.setText("就绪")
-
 
     def _parse_battery(self, output: str):
         level = "未知"

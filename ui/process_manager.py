@@ -28,6 +28,11 @@ class ProcessManager(QWidget):
         self.refresh_timer.timeout.connect(self.load_processes)
         self.refresh_interval = 3000  # 默认3秒
         self.init_ui()
+        # 延迟加载和启动定时器，避免阻塞窗口打开
+        QTimer.singleShot(100, self._start_monitoring)
+
+    def _start_monitoring(self):
+        """首次加载并启动自动刷新"""
         self.load_processes()
         self.refresh_timer.start(self.refresh_interval)
 

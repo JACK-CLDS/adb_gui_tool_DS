@@ -45,7 +45,8 @@ class AppsTab(QWidget):
         self.use_regex = False     # 是否使用正则表达式
 
         self.init_ui()
-        self.load_apps()  # 异步加载应用列表
+        # 延迟加载应用列表，避免阻塞窗口显示
+        QTimer.singleShot(0, self.load_apps)
 
     def init_ui(self):
         """初始化界面布局"""
@@ -144,29 +145,6 @@ class AppsTab(QWidget):
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("刷新")
         
-    def _parse_packages_with_version(self, output: str) -> List[Dict]:
-        packages = []
-        for line in output.splitlines():
-            line = line.strip()
-            if not line.startswith("package:"):
-                continue
-            # 格式: package:com.example versionCode=123
-            parts = line.split()
-            pkg = parts[0][8:]  # 去掉 "package:"
-            version_code = ""
-            for part in parts:
-                if part.startswith("versionCode="):
-                    version_code = part.split("=")[1]
-                    break
-            packages.append({
-                "package": pkg,
-                "name": self._get_app_name_from_package(pkg),
-                "version_name": "",
-                "version_code": version_code,
-                "install_time": ""
-            })
-        return packages
-
     def _parse_packages(self, output: str) -> List[Dict]:
         """解析 pm list packages 输出，返回包名列表（字典格式）"""
         packages = []
