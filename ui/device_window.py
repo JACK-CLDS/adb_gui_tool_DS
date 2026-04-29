@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QPushButton, QLabel, QTextEdit, QMessageBox, QProgressBar,
     QStatusBar, QToolBar, QAction, QGroupBox, QFormLayout,
-    QLineEdit, QGridLayout, QFileDialog
+    QLineEdit, QGridLayout, QFileDialog, QFrame, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QProcess
 from PyQt5.QtGui import QIcon, QPixmap, QFont
@@ -165,13 +165,24 @@ class DeviceWindow(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
+        def make_label(text="未知", align_left=False):
+            label = QLabel(text)
+            label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            label.setWordWrap(True)
+            if align_left:
+                label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            return label
+
+        # ---------- 基本信息（默认对齐：标签右对齐，字段左对齐）----------
         info_group = QGroupBox("基本信息")
         form_layout = QFormLayout()
-        self.model_label = QLabel("未知")
-        self.android_version_label = QLabel("未知")
-        self.battery_label = QLabel("未知")
-        self.resolution_label = QLabel("未知")
-        self.serial_label = QLabel(self.serial)
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+
+        self.model_label = make_label()
+        self.android_version_label = make_label()
+        self.battery_label = make_label()
+        self.resolution_label = make_label()
+        self.serial_label = make_label(self.serial)
 
         form_layout.addRow("设备型号:", self.model_label)
         form_layout.addRow("Android 版本:", self.android_version_label)
@@ -181,18 +192,39 @@ class DeviceWindow(QMainWindow):
         info_group.setLayout(form_layout)
         layout.addWidget(info_group)
 
-        # 硬件与系统信息区域
+        # ---------- 硬件信息（左对齐，但有边距）----------
         hardware_group = QGroupBox("硬件与系统信息")
         hw_layout = QFormLayout()
-        self.imei_label = QLabel("未知")
-        self.mac_label = QLabel("未知")
-        self.bluetooth_label = QLabel("未知")
-        self.network_label = QLabel("未知")
-        self.uptime_label = QLabel("未知")
-        self.cpu_label = QLabel("未知")
-        self.memory_label = QLabel("未知")
-        self.storage_label = QLabel("未知")
-        self.display_detail_label = QLabel("未知")
+        hw_layout.setLabelAlignment(Qt.AlignLeft)
+        hw_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        hw_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        hw_layout.setContentsMargins(15, 10, 10, 10)
+
+        self.imei_label = make_label(align_left=True)
+        self.mac_label = make_label(align_left=True)
+        self.bluetooth_label = make_label(align_left=True)
+        self.network_label = make_label(align_left=True)
+        self.uptime_label = make_label(align_left=True)
+        self.cpu_label = make_label(align_left=True)
+        self.memory_label = make_label(align_left=True)
+        self.storage_label = make_label(align_left=True)
+
+        # 显示屏详情文本框
+        self.display_detail_label = QTextEdit()
+        self.display_detail_label.setReadOnly(True)
+        self.display_detail_label.setStyleSheet("background: transparent; border: none;")
+        self.display_detail_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.display_detail_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.display_detail_label.setMinimumWidth(0)               # 关键：去掉默认最小宽度
+        self.display_detail_label.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)   # 水平/垂直扩展
+        self.display_detail_label.document().setDocumentMargin(0)
+
+        from PyQt5.QtGui import QTextOption, QFontDatabase
+        self.display_detail_label.setWordWrapMode(QTextOption.WrapAnywhere)
+        self.display_detail_label.setLineWrapMode(QTextEdit.WidgetWidth)
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        self.display_detail_label.setFont(fixed_font)
 
         hw_layout.addRow("IMEI:", self.imei_label)
         hw_layout.addRow("MAC 地址:", self.mac_label)
@@ -207,6 +239,7 @@ class DeviceWindow(QMainWindow):
         hardware_group.setLayout(hw_layout)
         layout.addWidget(hardware_group)
 
+        # ---------- 详细属性 ----------
         detail_group = QGroupBox("详细属性 (getprop)")
         detail_layout = QVBoxLayout()
         self.detail_text = QTextEdit()
@@ -320,34 +353,79 @@ class DeviceWindow(QMainWindow):
             self.resolution_label.setText("未知")
 
     def _get_imei(self) -> str:
-        # 方法1：通过 service call
-        out = self.adb_client.shell_sync("service call iphonesubinfo 1", self.serial)
-        # 解析输出中的数字，简单提取（较复杂，先尝试另一种）
-        # 方法2：dumpsys iphonesubinfo
-        out2 = self.adb_client.shell_sync("dumpsys iphonesubinfo | grep 'Device ID'", self.serial)
-        if "Device ID" in out2:
-            parts = out2.split("=")
-            if len(parts) > 1:
-                return parts[1].strip()
-        # 方法3：读取 /proc/imei（需要root）
-        return "未获取到"
+        # 尝试多种方式获取 IMEI，按成功率排序
+        # 方法1：dumpsys iphonesubinfo（Android 8+）
+        out = self.adb_client.shell_sync("dumpsys iphonesubinfo", self.serial, timeout=5)
+        if out:
+            for line in out.splitlines():
+                if "Device ID" in line or "IMEI" in line:
+                    parts = line.split("=")
+                    if len(parts) > 1:
+                        return parts[1].strip()
+        # 方法2：service call iphonesubinfo 1（需 root 或系统权限）
+        out2 = self.adb_client.shell_sync("service call iphonesubinfo 1", self.serial, timeout=5)
+        if out2 and "Result" in out2:
+            # 简单提取十六进制数字串
+            import re
+            nums = re.findall(r"'([0-9A-F\s]+)'", out2)
+            if nums:
+                clean = nums[0].replace(" ", "").strip().lower()
+                if clean and clean != "0":
+                    # 将十六进制转换为可见字符（可能包含数字）
+                    try:
+                        return bytes.fromhex(clean).decode("ascii", errors="ignore")
+                    except:
+                        pass
+        # 方法3：需要 root，读取系统文件
+        out3 = self.adb_client.shell_sync("cat /proc/imei 2>/dev/null", self.serial, timeout=2)
+        if out3 and "error" not in out3.lower():
+            return out3.strip()
+        out4 = self.adb_client.shell_sync("su -c 'cat /proc/imei' 2>/dev/null", self.serial, timeout=2)
+        if out4 and "error" not in out4.lower() and out4.strip():
+            return out4.strip()
+        return "需权限/不可用"
 
     def _get_mac_address(self) -> str:
-        out = self.adb_client.shell_sync("cat /sys/class/net/wlan0/address", self.serial)
-        if out and ":" in out:
-            return out.strip()
-        out2 = self.adb_client.shell_sync("ip link show wlan0 | grep ether", self.serial)
-        if "ether" in out2:
-            parts = out2.split()
-            for i, p in enumerate(parts):
-                if p == "ether" and i+1 < len(parts):
-                    return parts[i+1].strip()
+        # 遍历 /sys/class/net 下接口
+        out = self.adb_client.shell_sync("for iface in /sys/class/net/*/address; do [ -f $iface ] && addr=$(cat $iface) && [ -n $addr ] && [ $addr != '00:00:00:00:00:00' ] && iface_name=$(dirname $iface | xargs basename) && [ $iface_name != 'lo' ] && echo $iface_name $addr; done", self.serial, timeout=3)
+        if out.strip():
+            # 取第一个非 loopback 接口
+            lines = out.strip().splitlines()
+            for line in lines:
+                parts = line.split()
+                if len(parts) >= 2:
+                    name, addr = parts[0], parts[1]
+                    if ":" in addr and name not in ("lo",):
+                        return addr
+        # 备选：ip link
+        out2 = self.adb_client.shell_sync("ip link show", self.serial, timeout=3)
+        if out2:
+            import re
+            # 匹配格式: 3: wlan0: <...> ... link/ether xx:xx:xx:xx:xx:xx
+            for m in re.finditer(r"link/ether\s+([0-9a-fA-F:]{17})", out2):
+                return m.group(1)
         return "未知"
 
     def _get_bluetooth_address(self) -> str:
-        out = self.adb_client.shell_sync("settings get secure bluetooth_address", self.serial)
-        if out and ":" in out:
+        # 方法1：settings get secure bluetooth_address
+        out = self.adb_client.shell_sync("settings get secure bluetooth_address", self.serial, timeout=3)
+        if out.strip() and ":" in out.strip():
             return out.strip()
+        # 方法2：dumpsys bluetooth_manager
+        out2 = self.adb_client.shell_sync("dumpsys bluetooth_manager | grep 'Address'", self.serial, timeout=3)
+        if out2:
+            # 提取类似 "Address: XX:XX:XX:XX:XX:XX"
+            import re
+            m = re.search(r"([0-9A-Fa-f:]{17})", out2)
+            if m:
+                return m.group(1)
+        # 方法3：需要 root 读配置文件
+        out3 = self.adb_client.shell_sync("cat /data/misc/bluetooth/bt_config.conf 2>/dev/null | grep 'Address'", self.serial, timeout=2)
+        if out3:
+            import re
+            m = re.search(r"([0-9A-Fa-f:]{17})", out3)
+            if m:
+                return m.group(1)
         return "未知"
 
     def _get_network_status(self) -> str:
@@ -361,11 +439,22 @@ class DeviceWindow(QMainWindow):
             return "无网络连接"
 
     def _get_uptime(self) -> str:
-        out = self.adb_client.shell_sync("uptime", self.serial)
-        # 输出格式: up time: 1 day, 2:34,  idle time: ...
-        if "up time:" in out:
+        # 读取 /proc/uptime 获取秒数，避免 uptime 命令解析问题
+        out = self.adb_client.shell_sync("cat /proc/uptime", self.serial, timeout=2)
+        if out.strip():
+            seconds = float(out.split()[0])
+            days, rem = divmod(seconds, 86400)
+            hours, rem = divmod(rem, 3600)
+            minutes = rem // 60
+            if days >= 1:
+                return f"{int(days)}天 {int(hours)}小时 {int(minutes)}分"
+            else:
+                return f"{int(hours)}小时 {int(minutes)}分"
+        # 回退 uptime
+        out2 = self.adb_client.shell_sync("uptime", self.serial, timeout=2)
+        if "up time:" in out2:
             import re
-            match = re.search(r"up time:\s*([^,]+)", out)
+            match = re.search(r"up time:\s*([^,]+)", out2)
             if match:
                 return match.group(1).strip()
         return "未知"
@@ -381,17 +470,26 @@ class DeviceWindow(QMainWindow):
         return "未知"
 
     def _get_memory_info(self) -> str:
-        out = self.adb_client.shell_sync("cat /proc/meminfo", self.serial)
-        total = "?"
-        available = "?"
+        out = self.adb_client.shell_sync("cat /proc/meminfo", self.serial, timeout=3)
+        mem_data = {}
         for line in out.splitlines():
-            if "MemTotal:" in line:
-                total = line.split()[1]
-                total = f"{int(total)//1024} MB"
-            if "MemAvailable:" in line:
-                available = line.split()[1]
-                available = f"{int(available)//1024} MB"
-        return f"总计 {total}, 可用 {available}"
+            if ":" in line:
+                key, val = line.split(":", 1)
+                mem_data[key.strip()] = val.strip()
+        total = mem_data.get("MemTotal", "0").split()[0]
+        total_mb = int(total) // 1024 if total.isdigit() else "?"
+        # 优先用 MemAvailable
+        if "MemAvailable" in mem_data:
+            avail = mem_data["MemAvailable"].split()[0]
+            avail_mb = int(avail) // 1024 if avail.isdigit() else "?"
+        else:
+            # 计算近似可用内存：MemFree + Buffers + Cached
+            free = mem_data.get("MemFree", "0").split()[0]
+            buffers = mem_data.get("Buffers", "0").split()[0]
+            cached = mem_data.get("Cached", "0").split()[0]
+            # 注意 SReclaimable 也可算入，但简单化
+            avail_mb = (int(free) + int(buffers) + int(cached)) // 1024
+        return f"总计 {total_mb} MB, 可用 {avail_mb} MB"
 
     def _get_storage_info(self) -> str:
         out = self.adb_client.shell_sync("df /data", self.serial)
@@ -405,74 +503,19 @@ class DeviceWindow(QMainWindow):
         return "未知"
 
     def _get_display_detail(self) -> str:
-        out = self.adb_client.shell_sync("dumpsys display | grep mDisplayInfo", self.serial)
-        if "mDisplayInfo" in out:
-            # 提取分辨率、密度等信息
-            import re
-            # 例如: mDisplayInfo=DisplayInfo{"..."}
-            # 简单返回整行
+        # 返回所有匹配行，不截断，依赖文本框自动换行和滚动
+        out = self.adb_client.shell_sync("dumpsys display | grep -E 'mDisplayInfo|DisplayDeviceInfo|PhysicalDisplayInfo'", self.serial, timeout=3)
+        if out.strip():
             return out.strip()
-        return "未知"
-
-
-
-    def create_info_tab(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        # 基本信息区域
-        info_group = QGroupBox("基本信息")
-        form_layout = QFormLayout()
-        self.model_label = QLabel("未知")
-        self.android_version_label = QLabel("未知")
-        self.battery_label = QLabel("未知")
-        self.resolution_label = QLabel("未知")
-        self.serial_label = QLabel(self.serial)
-
-        form_layout.addRow("设备型号:", self.model_label)
-        form_layout.addRow("Android 版本:", self.android_version_label)
-        form_layout.addRow("电池状态:", self.battery_label)
-        form_layout.addRow("屏幕分辨率:", self.resolution_label)
-        form_layout.addRow("序列号:", self.serial_label)
-        info_group.setLayout(form_layout)
-        layout.addWidget(info_group)
-
-        # 硬件与系统信息区域（新增）
-        hardware_group = QGroupBox("硬件与系统信息")
-        hw_layout = QFormLayout()
-        self.imei_label = QLabel("未知")
-        self.mac_label = QLabel("未知")
-        self.bluetooth_label = QLabel("未知")
-        self.network_label = QLabel("未知")
-        self.uptime_label = QLabel("未知")
-        self.cpu_label = QLabel("未知")
-        self.memory_label = QLabel("未知")
-        self.storage_label = QLabel("未知")
-        self.display_detail_label = QLabel("未知")
-
-        hw_layout.addRow("IMEI:", self.imei_label)
-        hw_layout.addRow("MAC 地址:", self.mac_label)
-        hw_layout.addRow("蓝牙地址:", self.bluetooth_label)
-        hw_layout.addRow("网络状态:", self.network_label)
-        hw_layout.addRow("开机时间:", self.uptime_label)
-        hw_layout.addRow("CPU 信息:", self.cpu_label)
-        hw_layout.addRow("内存信息:", self.memory_label)
-        hw_layout.addRow("存储信息:", self.storage_label)
-        hw_layout.addRow("显示屏详情:", self.display_detail_label)
-
-        hardware_group.setLayout(hw_layout)
-        layout.addWidget(hardware_group)
-
-        # 详细信息文本框（getprop 输出）
-        detail_group = QGroupBox("详细属性 (getprop)")
-        detail_layout = QVBoxLayout()
-        self.detail_text = QTextEdit()
-        self.detail_text.setReadOnly(True)
-        detail_layout.addWidget(self.detail_text)
-        detail_group.setLayout(detail_layout)
-        layout.addWidget(detail_group)
-
-        return widget
+        # 回退方案
+        size = self.adb_client.shell_sync("wm size", self.serial, timeout=2).strip()
+        density = self.adb_client.shell_sync("wm density", self.serial, timeout=2).strip()
+        parts = []
+        if "Physical size" in size:
+            parts.append(size.split(":")[-1].strip())
+        if "Physical density" in density:
+            parts.append(density.split(":")[-1].strip())
+        return "\n".join(parts) if parts else "未知"
 
     def create_process_manager_tab(self) -> QWidget:
         from ui.process_manager import ProcessManager
