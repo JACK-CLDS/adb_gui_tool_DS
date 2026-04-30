@@ -251,3 +251,87 @@ class AdbClient(QObject):
         escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
         args = ['input', 'text', escaped]
         self._exec(args, device_serial)
+
+    def get_app_icon_data(self, package: str, apk_path: str, device_serial: Optional[str] = None) -> Optional[bytes]:
+        """
+        从设备上获取应用的图标数据（PNG 字节流）。
+        先尝试通过 dumpsys 获取图标资源路径，再使用 toybox unzip 提取。
+        如果失败则回退到拉取整个 APK 并从 ZIP 中提取。
+        """
+        # 1. 获取图标的资源路径
+        out = self.shell_sync(f"dumpsys package {package}", device_serial, timeout=5)
+        icon_res_path = None
+        for line in out.splitlines():
+            if 'icon=' in line:
+                # 尝试多种格式：icon=0x7f020000 /path/to/ic_launcher.png
+                # 或 icon=7f030000 res/drawable/ic_launcher.png
+                import re
+                match = re.search(r'icon=\S+\s+(\S+\.png)', line)
+                if match:
+                    icon_res_path = match.group(1)
+                    break
+        if not icon_res_path:
+            return self._get_icon_fallback(apk_path, device_serial=device_serial)
+
+        # 2. 用 toybox unzip 提取图标到临时文件
+        tmp_remote = f"/sdcard/_{package}.png"
+        self.shell_sync(f"rm -f {tmp_remote}", device_serial, timeout=1)
+        cmd = f"toybox unzip -p '{apk_path}' '{icon_res_path}' > {tmp_remote} 2>/dev/null"
+        self.shell_sync(cmd, device_serial, timeout=5)
+
+        check = self.shell_sync(f"ls -l {tmp_remote} 2>/dev/null", device_serial, timeout=3)
+        if "No such file" in check or not check.strip():
+            self.shell_sync(f"rm -f {tmp_remote}", device_serial, timeout=1)
+            return self._get_icon_fallback(apk_path, icon_res_path, device_serial)
+
+        # 3. 读取临时文件内容
+        import subprocess
+        args = [self.adb_path]
+        if device_serial:
+            args.extend(['-s', device_serial])
+        args.extend(['exec-out', 'cat', tmp_remote])
+        try:
+            result = subprocess.run(args, capture_output=True, timeout=10)
+            if result.returncode == 0 and result.stdout:
+                self.shell_sync(f"rm -f {tmp_remote}", device_serial, timeout=1)
+                return result.stdout
+        except Exception as e:
+            print(f"Failed to read icon temp file: {e}")
+        finally:
+            self.shell_sync(f"rm -f {tmp_remote}", device_serial, timeout=1)
+        return None
+
+    def _get_icon_fallback(self, apk_path: str, icon_res_path: Optional[str] = None, device_serial: Optional[str] = None) -> Optional[bytes]:
+        """备用方案：拉取整个 APK 到本地，用 zipfile 提取图标"""
+        import tempfile
+        import zipfile
+        import os
+        try:
+            tmp_local = tempfile.mktemp(suffix=".apk")
+            self.pull_sync(apk_path, tmp_local, device_serial, timeout=60)
+            with zipfile.ZipFile(tmp_local, 'r') as zf:
+                names = zf.namelist()
+                # 如果提供了具体路径，优先精确匹配
+                if icon_res_path:
+                    if icon_res_path in names:
+                        data = zf.read(icon_res_path)
+                        os.unlink(tmp_local)
+                        return data
+                    # 大小写不敏感搜索
+                    lower = icon_res_path.lower()
+                    for n in names:
+                        if n.lower() == lower:
+                            data = zf.read(n)
+                            os.unlink(tmp_local)
+                            return data
+                # 否则查找所有 ic_launcher*.png，取最大文件
+                candidates = [n for n in names if 'ic_launcher' in n.lower() and n.endswith('.png')]
+                if candidates:
+                    candidates.sort(key=lambda n: zf.getinfo(n).file_size, reverse=True)
+                    data = zf.read(candidates[0])
+                    os.unlink(tmp_local)
+                    return data
+            os.unlink(tmp_local)
+        except Exception as e:
+            print(f"Fallback icon extraction failed: {e}")
+        return None
