@@ -54,6 +54,8 @@ class MainWindow(QMainWindow):
         # 无论是否有 device_manager，更新按钮状态
         self.update_adb_buttons_state()
         
+        self.create_menu_bar()
+        
         # 回车键打开选中设备
         QShortcut(QKeySequence(Qt.Key_Return), self, self._on_return_pressed)
         QShortcut(QKeySequence(Qt.Key_Enter), self, self._on_return_pressed)   # 小键盘回车
@@ -207,6 +209,7 @@ class MainWindow(QMainWindow):
 
         # 保存需要根据 ADB 状态启用的按钮列表
         self.adb_dependent_actions = [refresh_action, restart_adb_action, kill_adb_action]
+        self.toolbar = toolbar
 
     def create_log_dock(self):
         self.log_dock = QDockWidget("程序日志", self)
@@ -639,3 +642,25 @@ class MainWindow(QMainWindow):
             if row >= 0:
                 serial = self.device_table.item(row, 1).text()
                 self.open_device_window(serial)
+
+    def create_menu_bar(self):
+        menubar = self.menuBar()
+        view_menu = menubar.addMenu("视图")
+
+        # 全局设置
+        settings_action = QAction("全局设置", self)
+        settings_action.triggered.connect(self.open_settings_dialog)
+        view_menu.addAction(settings_action)
+
+        # 显示/隐藏工具栏
+        self.toggle_toolbar_action = QAction("设备操作工具栏", self, checkable=True)
+        self.toggle_toolbar_action.setChecked(True)
+        self.toggle_toolbar_action.toggled.connect(self.toolbar.setVisible)
+        self.toolbar.visibilityChanged.connect(self.toggle_toolbar_action.setChecked)
+        view_menu.addAction(self.toggle_toolbar_action)
+        # 显示/隐藏程序日志
+        self.toggle_log_action = QAction("程序日志", self, checkable=True)
+        self.toggle_log_action.setChecked(True)
+        self.toggle_log_action.toggled.connect(self.log_dock.setVisible)
+        self.log_dock.visibilityChanged.connect(self.toggle_log_action.setChecked)
+        view_menu.addAction(self.toggle_log_action)

@@ -11,8 +11,6 @@ AI-assisted development
 
 TODO
 
-**设置/工具栏重新开启入口** (bug fix)
-
 **代理设置界面**（完善代理配置功能，如果当前未完全实现）
 
 **跨平台支持**（在 Windows/Linux 上进行测试并修复兼容性问题）
