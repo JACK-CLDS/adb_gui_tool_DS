@@ -10,10 +10,11 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QPushButton, QLabel, QTextEdit, QMessageBox, QProgressBar,
     QStatusBar, QToolBar, QAction, QGroupBox, QFormLayout,
-    QLineEdit, QGridLayout, QFileDialog, QFrame, QSizePolicy
+    QLineEdit, QGridLayout, QFileDialog, QFrame, QSizePolicy,
+    QShortcut
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QProcess
-from PyQt5.QtGui import QIcon, QPixmap, QFont
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QKeySequence
 
 from core.adb_client import AdbClient
 from utils.config_manager import ConfigManager
@@ -42,6 +43,7 @@ class DeviceWindow(QMainWindow):
         self.recording_process = None
         self.recording_file = None
         self.recording_pid = None
+        self.setup_shortcuts()
 
     def init_ui(self):
         central_widget = QWidget()
@@ -160,6 +162,40 @@ class DeviceWindow(QMainWindow):
 
     def show_status_message(self, msg: str):
         self.status_label.setText(msg)
+
+    def setup_shortcuts(self):
+        import platform
+        defaults = {
+            "close": "Ctrl+W",
+            "screenshot": "Ctrl+Shift+S",
+            "refresh_info": "F5",
+            "recording": "Ctrl+Shift+R",
+        }
+        # 清除已有快捷键
+        if hasattr(self, '_shortcuts_list'):
+            for sc in self._shortcuts_list:
+                sc.setEnabled(False)
+                sc.deleteLater()
+        self._shortcuts_list = []
+        # 读取配置
+        close_key = ConfigManager.get_setting("shortcut_close", defaults["close"])
+        screenshot_key = ConfigManager.get_setting("shortcut_screenshot", defaults["screenshot"])
+        refresh_key = ConfigManager.get_setting("shortcut_refresh_info", defaults["refresh_info"])
+        recording_key = ConfigManager.get_setting("shortcut_recording", defaults["recording"])
+        
+        sc1 = QShortcut(QKeySequence(close_key), self, self.close)
+        sc2 = QShortcut(QKeySequence(screenshot_key), self, self.take_screenshot)
+        sc3 = QShortcut(QKeySequence(refresh_key), self, self.load_device_info_async)
+        sc4 = QShortcut(QKeySequence(recording_key), self, self._toggle_recording)
+        
+        self._shortcuts_list = [sc1, sc2, sc3, sc4]
+
+    def _toggle_recording(self):
+        """根据当前状态切换录制"""
+        if hasattr(self, 'recording_proc') and self.recording_proc is not None:
+            self.stop_recording()
+        else:
+            self.start_recording()
 
     def create_info_tab(self) -> QWidget:
         widget = QWidget()

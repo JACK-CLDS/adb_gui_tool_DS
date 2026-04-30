@@ -2,15 +2,17 @@ import sys
 from typing import List, Optional
 from datetime import datetime
 
+
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTableWidget, QTableWidgetItem, QHeaderView, QPushButton,
     QLineEdit, QToolBar, QAction, QDockWidget, QTextEdit,
     QTreeWidget, QTreeWidgetItem, QMenu, QMessageBox, QInputDialog,
-    QAbstractItemView, QApplication, QDialog, QTextBrowser, QLabel
+    QAbstractItemView, QApplication, QDialog, QTextBrowser, QLabel,
+    QShortcut
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPoint, QProcess, QEvent
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QKeySequence
 
 from core.adb_client import AdbClient
 from core.device_manager import DeviceManager
@@ -51,6 +53,10 @@ class MainWindow(QMainWindow):
 
         # 无论是否有 device_manager，更新按钮状态
         self.update_adb_buttons_state()
+        
+        # 回车键打开选中设备
+        QShortcut(QKeySequence(Qt.Key_Return), self, self._on_return_pressed)
+        QShortcut(QKeySequence(Qt.Key_Enter), self, self._on_return_pressed)   # 小键盘回车
 
     def update_adb_buttons_state(self):
         """根据 device_manager 是否存在，更新按钮启用状态"""
@@ -621,7 +627,15 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         if obj == self.device_table.viewport() and event.type() == QEvent.Drop:
-            # 拖拽完成后保存顺序（延迟一点确保表格已更新）
             from PyQt5.QtCore import QTimer
             QTimer.singleShot(10, self.save_device_order)
         return super().eventFilter(obj, event)
+
+    def _on_return_pressed(self):
+        """当焦点在设备表格时，回车打开设备窗口"""
+        focused = QApplication.focusWidget()
+        if focused is not None and (focused is self.device_table.viewport() or focused is self.device_table):
+            row = self.device_table.currentRow()
+            if row >= 0:
+                serial = self.device_table.item(row, 1).text()
+                self.open_device_window(serial)

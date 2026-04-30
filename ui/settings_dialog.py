@@ -1,5 +1,5 @@
 """
-ui/settings_dialog.py - 全局设置对话框
+ui/settings_dialog.py - 全局设置对话框（含快捷键设置）
 """
 
 import shutil
@@ -8,13 +8,23 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QFileDialog, QComboBox,
-    QSpinBox, QDialogButtonBox, QMessageBox, QLabel
+    QSpinBox, QDialogButtonBox, QMessageBox, QLabel,
+    QGroupBox, QKeySequenceEdit
 )
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtCore import Qt
 from utils.config_manager import ConfigManager
 from utils.system_utils import SystemUtils
 
 
 class SettingsDialog(QDialog):
+    DEFAULT_SHORTCUTS = {
+        "close": "Ctrl+W",
+        "screenshot": "Ctrl+Shift+S",
+        "refresh_info": "F5",
+        "recording": "Ctrl+Shift+R",
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("全局设置")
@@ -61,14 +71,33 @@ class SettingsDialog(QDialog):
         self.refresh_spin.setSuffix(" 毫秒")
         form.addRow("设备列表刷新间隔:", self.refresh_spin)
 
-        # 清除缓存按钮
-        self.clear_cache_btn = QPushButton("清除缓存")
-        self.clear_cache_btn.clicked.connect(self.clear_cache)
-        form.addRow("", self.clear_cache_btn)
-
         layout.addLayout(form)
 
-        info_label = QLabel("提示：修改 ADB 路径后需要重新启动程序才能生效。")
+        # ---------- 快捷键设置 ----------
+        shortcut_group = QGroupBox("快捷键 (部分修改需重新打开设备窗口)")
+        shortcut_form = QFormLayout()
+
+        self.shortcut_edits = {}
+        shortcut_descriptions = {
+            "close": "关闭设备窗口",
+            "screenshot": "截图",
+            "refresh_info": "刷新设备信息",
+            "recording": "开始/停止录制",
+        }
+        for key in self.DEFAULT_SHORTCUTS:
+            editor = QKeySequenceEdit()
+            self.shortcut_edits[key] = editor
+            shortcut_form.addRow(shortcut_descriptions[key], editor)
+
+        shortcut_group.setLayout(shortcut_form)
+        layout.addWidget(shortcut_group)
+
+        # ---------- 清除缓存 ----------
+        self.clear_cache_btn = QPushButton("清除缓存")
+        self.clear_cache_btn.clicked.connect(self.clear_cache)
+        layout.addWidget(self.clear_cache_btn)
+
+        info_label = QLabel("提示：修改 ADB 路径后需要重新启动程序才能生效。部分快捷键修改后需要重新打开设备窗口。")
         info_label.setStyleSheet("color: gray; font-size: 11px;")
         layout.addWidget(info_label)
 
@@ -107,6 +136,11 @@ class SettingsDialog(QDialog):
             self.lang_combo.setCurrentIndex(idx)
         self.refresh_spin.setValue(self.settings.get("auto_refresh_interval", 3000))
 
+        # 加载快捷键
+        for key, editor in self.shortcut_edits.items():
+            saved = self.settings.get(f"shortcut_{key}", self.DEFAULT_SHORTCUTS[key])
+            editor.setKeySequence(QKeySequence(saved))
+
         self.adb_path_edit.blockSignals(False)
         self.scrcpy_path_edit.blockSignals(False)
         self.lang_combo.blockSignals(False)
@@ -132,21 +166,23 @@ class SettingsDialog(QDialog):
         ConfigManager.set_setting("language", new_lang)
         ConfigManager.set_setting("auto_refresh_interval", new_refresh)
 
+        # 保存快捷键
+        for key, editor in self.shortcut_edits.items():
+            value = editor.keySequence().toString()
+            ConfigManager.set_setting(f"shortcut_{key}", value)
+
         if self._has_changes:
-            QMessageBox.information(self, "设置已保存", "部分设置需要重启程序才能完全生效。")
+            QMessageBox.information(self, "设置已保存", "部分设置需要重启程序或重新打开设备窗口才能完全生效。")
         self.accept()
 
     def clear_cache(self):
-        """删除项目 cache 目录下的所有文件"""
         reply = QMessageBox.question(
-            self,
-            "确认清除缓存",
+            self, "确认清除缓存",
             "确定要删除所有缓存数据吗？\n这包括应用图标等缓存文件。",
             QMessageBox.Yes | QMessageBox.No
         )
         if reply != QMessageBox.Yes:
             return
-
         cache_dir = Path(__file__).resolve().parent.parent / "cache"
         try:
             if cache_dir.exists():
