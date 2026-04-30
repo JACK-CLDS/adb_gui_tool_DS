@@ -2,6 +2,9 @@
 ui/settings_dialog.py - 全局设置对话框
 """
 
+import shutil
+from pathlib import Path
+
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QFileDialog, QComboBox,
@@ -58,6 +61,11 @@ class SettingsDialog(QDialog):
         self.refresh_spin.setSuffix(" 毫秒")
         form.addRow("设备列表刷新间隔:", self.refresh_spin)
 
+        # 清除缓存按钮
+        self.clear_cache_btn = QPushButton("清除缓存")
+        self.clear_cache_btn.clicked.connect(self.clear_cache)
+        form.addRow("", self.clear_cache_btn)
+
         layout.addLayout(form)
 
         info_label = QLabel("提示：修改 ADB 路径后需要重新启动程序才能生效。")
@@ -86,7 +94,6 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "测试失败", f"无法执行 ADB:\n{version}")
 
     def load_settings(self):
-        # 断开信号避免触发修改标记
         self.adb_path_edit.blockSignals(True)
         self.scrcpy_path_edit.blockSignals(True)
         self.lang_combo.blockSignals(True)
@@ -100,7 +107,6 @@ class SettingsDialog(QDialog):
             self.lang_combo.setCurrentIndex(idx)
         self.refresh_spin.setValue(self.settings.get("auto_refresh_interval", 3000))
 
-        # 恢复信号
         self.adb_path_edit.blockSignals(False)
         self.scrcpy_path_edit.blockSignals(False)
         self.lang_combo.blockSignals(False)
@@ -129,3 +135,23 @@ class SettingsDialog(QDialog):
         if self._has_changes:
             QMessageBox.information(self, "设置已保存", "部分设置需要重启程序才能完全生效。")
         self.accept()
+
+    def clear_cache(self):
+        """删除项目 cache 目录下的所有文件"""
+        reply = QMessageBox.question(
+            self,
+            "确认清除缓存",
+            "确定要删除所有缓存数据吗？\n这包括应用图标等缓存文件。",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        cache_dir = Path(__file__).resolve().parent.parent / "cache"
+        try:
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            QMessageBox.information(self, "缓存已清除", "缓存数据已被删除。")
+        except Exception as e:
+            QMessageBox.warning(self, "清除失败", f"清除缓存时发生错误：{str(e)}")

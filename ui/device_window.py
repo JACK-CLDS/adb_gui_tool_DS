@@ -49,7 +49,7 @@ class DeviceWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
 
         self.tab_widget = QTabWidget()
-        layout.addWidget(self.tab_widget)
+        layout.addWidget(self.tab_widget, 1)
 
         self.info_tab = self.create_info_tab()
         self.tab_widget.addTab(self.info_tab, "设备信息")
@@ -173,7 +173,7 @@ class DeviceWindow(QMainWindow):
                 label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             return label
 
-        # ---------- 基本信息（默认对齐：标签右对齐，字段左对齐）----------
+        # ---------- 基本信息 ----------
         info_group = QGroupBox("基本信息")
         form_layout = QFormLayout()
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
@@ -190,9 +190,9 @@ class DeviceWindow(QMainWindow):
         form_layout.addRow("屏幕分辨率:", self.resolution_label)
         form_layout.addRow("序列号:", self.serial_label)
         info_group.setLayout(form_layout)
-        layout.addWidget(info_group)
+        layout.addWidget(info_group, 0)
 
-        # ---------- 硬件信息（左对齐，但有边距）----------
+        # ---------- 硬件信息（限制最大高度，禁止拉伸）----------
         hardware_group = QGroupBox("硬件与系统信息")
         hw_layout = QFormLayout()
         hw_layout.setLabelAlignment(Qt.AlignLeft)
@@ -206,20 +206,45 @@ class DeviceWindow(QMainWindow):
         self.network_label = make_label(align_left=True)
         self.uptime_label = make_label(align_left=True)
         self.cpu_label = make_label(align_left=True)
-        self.memory_label = make_label(align_left=True)
-        self.storage_label = make_label(align_left=True)
+        self.imei_label = make_label(align_left=True)
+        self.mac_label = make_label(align_left=True)
+        self.bluetooth_label = make_label(align_left=True)
+        self.network_label = make_label(align_left=True)
+        self.uptime_label = make_label(align_left=True)
+        self.cpu_label = make_label(align_left=True)
 
-        # 显示屏详情文本框
+        # what cam i say
+        # 内存信息 - 无边框文本框，防止截断
+        self.memory_label = QTextEdit()
+        self.memory_label.setReadOnly(True)
+        self.memory_label.setStyleSheet("background: transparent; border: none;")
+        self.memory_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.memory_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.memory_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.memory_label.setFixedHeight(24)   # 单行高度
+        self.memory_label.document().setDocumentMargin(0)
+        from PyQt5.QtGui import QTextOption
+        self.memory_label.setWordWrapMode(QTextOption.WrapAnywhere)
+
+        # 存储信息 - 无边框文本框
+        self.storage_label = QTextEdit()
+        self.storage_label.setReadOnly(True)
+        self.storage_label.setStyleSheet("background: transparent; border: none;")
+        self.storage_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.storage_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.storage_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.storage_label.setFixedHeight(24)
+        self.storage_label.document().setDocumentMargin(0)
+        self.storage_label.setWordWrapMode(QTextOption.WrapAnywhere)
+
         self.display_detail_label = QTextEdit()
         self.display_detail_label.setReadOnly(True)
         self.display_detail_label.setStyleSheet("background: transparent; border: none;")
         self.display_detail_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.display_detail_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.display_detail_label.setMinimumWidth(0)               # 关键：去掉默认最小宽度
-        self.display_detail_label.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)   # 水平/垂直扩展
+        self.display_detail_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.display_detail_label.setMinimumWidth(0)
         self.display_detail_label.document().setDocumentMargin(0)
-
         from PyQt5.QtGui import QTextOption, QFontDatabase
         self.display_detail_label.setWordWrapMode(QTextOption.WrapAnywhere)
         self.display_detail_label.setLineWrapMode(QTextEdit.WidgetWidth)
@@ -237,16 +262,18 @@ class DeviceWindow(QMainWindow):
         hw_layout.addRow("显示屏详情:", self.display_detail_label)
 
         hardware_group.setLayout(hw_layout)
-        layout.addWidget(hardware_group)
+        hardware_group.setMaximumHeight(400)          # ★ 关键：阻止硬件组垂直拉伸
+        layout.addWidget(hardware_group, 0)
 
-        # ---------- 详细属性 ----------
+        # ---------- 详细属性（允许拉伸）----------
         detail_group = QGroupBox("详细属性 (getprop)")
         detail_layout = QVBoxLayout()
         self.detail_text = QTextEdit()
         self.detail_text.setReadOnly(True)
+        self.detail_text.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         detail_layout.addWidget(self.detail_text)
         detail_group.setLayout(detail_layout)
-        layout.addWidget(detail_group)
+        layout.addWidget(detail_group, 1)             # 占据所有剩余空间
 
         return widget
 
@@ -303,9 +330,9 @@ class DeviceWindow(QMainWindow):
             ("CPU信息", lambda: self._get_cpu_info(),
              lambda val: self.cpu_label.setText(val)),
             ("内存信息", lambda: self._get_memory_info(),
-             lambda val: self.memory_label.setText(val)),
+             lambda val: self.memory_label.setPlainText(val)),
             ("存储信息", lambda: self._get_storage_info(),
-             lambda val: self.storage_label.setText(val)),
+             lambda val: self.storage_label.setPlainText(val)),
             ("显示屏详情", lambda: self._get_display_detail(),
              lambda val: self.display_detail_label.setText(val)),
             ("详细属性", lambda: self.adb_client.shell_sync("getprop", self.serial, timeout=8),
@@ -476,30 +503,50 @@ class DeviceWindow(QMainWindow):
             if ":" in line:
                 key, val = line.split(":", 1)
                 mem_data[key.strip()] = val.strip()
+
         total = mem_data.get("MemTotal", "0").split()[0]
         total_mb = int(total) // 1024 if total.isdigit() else "?"
-        # 优先用 MemAvailable
+
+        avail_mb = "?"  # 默认值
+        # 优先使用 MemAvailable
         if "MemAvailable" in mem_data:
             avail = mem_data["MemAvailable"].split()[0]
-            avail_mb = int(avail) // 1024 if avail.isdigit() else "?"
+            if avail.isdigit():
+                avail_mb = int(avail) // 1024
         else:
             # 计算近似可用内存：MemFree + Buffers + Cached
             free = mem_data.get("MemFree", "0").split()[0]
             buffers = mem_data.get("Buffers", "0").split()[0]
             cached = mem_data.get("Cached", "0").split()[0]
-            # 注意 SReclaimable 也可算入，但简单化
-            avail_mb = (int(free) + int(buffers) + int(cached)) // 1024
+            if free.isdigit() and buffers.isdigit() and cached.isdigit():
+                avail_mb = (int(free) + int(buffers) + int(cached)) // 1024
         return f"总计 {total_mb} MB, 可用 {avail_mb} MB"
 
     def _get_storage_info(self) -> str:
-        out = self.adb_client.shell_sync("df /data", self.serial)
+        out = self.adb_client.shell_sync("df /data", self.serial, timeout=3)
+        if not out:
+            return "未知"
         lines = out.splitlines()
         if len(lines) >= 2:
-            parts = lines[1].split()
-            if len(parts) >= 4:
-                size = parts[1]
-                used = parts[2]
-                return f"总容量 {size}, 已用 {used}"
+            parts = lines[1].split()   # 第二行：数据行
+            if len(parts) >= 3:
+                size = parts[1]        # 第一列是文件系统，第二列 Size
+                used = parts[2]        # 第三列 Used
+                # 转换为可读格式（KB -> MB 或 GB）
+                try:
+                    size_int = int(size)
+                    used_int = int(used)
+                    if size_int >= 1048576:
+                        size_str = f"{size_int / 1048576:.1f} GB"
+                    else:
+                        size_str = f"{size_int / 1024:.1f} MB"
+                    if used_int >= 1048576:
+                        used_str = f"{used_int / 1048576:.1f} GB"
+                    else:
+                        used_str = f"{used_int / 1024:.1f} MB"
+                    return f"总容量 {size_str}, 已用 {used_str}"
+                except ValueError:
+                    return f"总容量 {size}, 已用 {used}"
         return "未知"
 
     def _get_display_detail(self) -> str:
@@ -523,9 +570,9 @@ class DeviceWindow(QMainWindow):
         pm.status_message.connect(self.show_status_message)
         return pm
 
-    def _on_model_loaded(self, model: str):
-        print(f"_on_model_loaded: '{model}'")
-        self.model_label.setText(model if model else "未知")
+    #    def _on_model_loaded(self, model: str):
+    #        print(f"_on_model_loaded: '{model}'")
+    #        self.model_label.setText(model if model else "未知")
 
     def _on_android_version_loaded(self, version: str):
         print(f"_on_android_version_loaded: '{version}'")
