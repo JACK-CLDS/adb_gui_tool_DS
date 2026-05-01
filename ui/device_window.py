@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from ui.proxy_tab import ProxyTab
+from ui.broadcast_dialog import BroadcastDialog
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
@@ -158,6 +159,11 @@ class DeviceWindow(QMainWindow):
         keyboard_action = QAction("软键盘", self)
         keyboard_action.triggered.connect(self.open_soft_keyboard)
         toolbar.addAction(keyboard_action)
+
+        toolbar.addSeparator()
+        broadcast_action = QAction("发送广播", self)
+        broadcast_action.triggered.connect(self.open_broadcast_dialog)
+        toolbar.addAction(broadcast_action)
 
         toolbar.addSeparator()
         self.immersive_status_action = QAction("沉浸状态栏", self, checkable=True)
@@ -1294,3 +1300,7 @@ class DeviceWindow(QMainWindow):
     def _on_immersive_done(self, desc):
         self.status_label.setText(desc)
         QTimer.singleShot(3000, lambda: self.status_label.setText("就绪"))
+
+    def open_broadcast_dialog(self):
+        dlg = BroadcastDialog(self.serial, self.adb_client, self)
+        dlg.exec_()
