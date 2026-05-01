@@ -154,6 +154,15 @@ class DeviceWindow(QMainWindow):
         keyboard_action.triggered.connect(self.open_soft_keyboard)
         toolbar.addAction(keyboard_action)
 
+        toolbar.addSeparator()
+        self.immersive_status_action = QAction("沉浸状态栏", self, checkable=True)
+        self.immersive_status_action.triggered.connect(self.toggle_immersive_status_bar)
+        toolbar.addAction(self.immersive_status_action)
+
+        self.immersive_nav_action = QAction("沉浸导航栏", self, checkable=True)
+        self.immersive_nav_action.triggered.connect(self.toggle_immersive_navigation)
+        toolbar.addAction(self.immersive_nav_action)
+
     def init_statusbar(self):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -1251,3 +1260,28 @@ class DeviceWindow(QMainWindow):
         dialog.resize(800, 600)
         dialog.exec_()
         self.status_label.setText("就绪")
+
+    def toggle_immersive_status_bar(self, checked):
+        self._set_immersive("status", checked)
+        self.immersive_status_action.setChecked(checked)
+
+    def toggle_immersive_navigation(self, checked):
+        self._set_immersive("navigation", checked)
+        self.immersive_nav_action.setChecked(checked)
+
+    def _set_immersive(self, target: str, enable: bool):
+        """target: 'status' 或 'navigation'"""
+        if enable:
+            cmd = f"settings put global policy_control immersive.{target}=*"
+            desc = f"沉浸{ '状态栏' if target == 'status' else '导航栏' }已开启"
+        else:
+            cmd = "settings put global policy_control null*"
+            desc = f"沉浸{ '状态栏' if target == 'status' else '导航栏' }已关闭"
+        self.status_label.setText(f"正在设置{ '状态栏' if target == 'status' else '导航栏' }...")
+        self.adb_client.shell(cmd, self.serial,
+                              callback=lambda code, out, err: self._on_immersive_done(desc))
+        self.status_label.setText("就绪")
+
+    def _on_immersive_done(self, desc):
+        self.status_label.setText(desc)
+        QTimer.singleShot(3000, lambda: self.status_label.setText("就绪"))

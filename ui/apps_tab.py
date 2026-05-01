@@ -329,7 +329,16 @@ class AppsTab(QWidget):
         clear_data_action = QAction("清除数据", self)
         clear_data_action.triggered.connect(lambda: self.clear_app_data(packages))
         menu.addAction(clear_data_action)
+        menu.addSeparator()
 
+        run_action = QAction("运行", self)
+        run_action.triggered.connect(lambda: self.run_apps(packages, as_root=False))
+        menu.addAction(run_action)
+
+        run_root_action = QAction("以 root 权限运行", self)
+        run_root_action.triggered.connect(lambda: self.run_apps(packages, as_root=True))
+        menu.addAction(run_root_action)
+        
         export_action = QAction("导出APK", self)
         export_action.triggered.connect(lambda: self.export_apks(packages))
         menu.addAction(export_action)
@@ -468,3 +477,21 @@ class AppsTab(QWidget):
                 self.load_apps()
             else:
                 QMessageBox.warning(self, "安装失败", f"{filename} 安装失败\n{error_msg}")
+
+    def run_apps(self, packages: set, as_root: bool = False):
+        """启动应用（支持普通运行或 root 运行）"""
+        if not packages:
+            return
+        for pkg in packages:
+            if as_root:
+                cmd = f"su -c 'am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)'"
+            else:
+                cmd = f"am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)"
+            self.adb_client.shell(cmd, self.serial,
+                                  callback=lambda code, out, err, p=pkg: self._on_run_finished(code, out, err, p))
+
+    def _on_run_finished(self, exit_code, stdout, stderr, pkg):
+        if exit_code == 0:
+            self.status_message.emit(f"已启动 {pkg}")
+        else:
+            self.status_message.emit(f"启动 {pkg} 失败: {stderr}")
