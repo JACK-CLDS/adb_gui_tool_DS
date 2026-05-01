@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+from ui.proxy_tab import ProxyTab
+
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QPushButton, QLabel, QTextEdit, QMessageBox, QProgressBar,
@@ -70,6 +72,9 @@ class DeviceWindow(QMainWindow):
 
         self.terminal_tab = self.create_terminal_tab()
         self.tab_widget.addTab(self.terminal_tab, "终端")
+
+        self.proxy_tab = self.create_proxy_tab()
+        self.tab_widget.addTab(self.proxy_tab, "代理设置")
 
     def init_toolbar(self):
         toolbar = self.addToolBar("设备操作")
@@ -258,7 +263,7 @@ class DeviceWindow(QMainWindow):
         self.uptime_label = make_label(align_left=True)
         self.cpu_label = make_label(align_left=True)
 
-        # what cam i say
+        # what can i say
         # 内存信息 - 无边框文本框，防止截断
         self.memory_label = QTextEdit()
         self.memory_label.setReadOnly(True)
@@ -345,6 +350,10 @@ class DeviceWindow(QMainWindow):
         terminal = TerminalWidget(self.serial, self.adb_client)
         terminal.status_message.connect(self.show_status_message)
         return terminal
+
+    def create_proxy_tab(self) -> QWidget:
+        proxy = ProxyTab(self.serial, self.adb_client)
+        return proxy
 
     def load_device_info_async(self):
         """异步加载设备信息，逐步更新UI，避免卡顿"""
