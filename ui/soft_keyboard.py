@@ -1,6 +1,13 @@
 """
-ui/soft_keyboard.py - 软键盘窗口
-支持发送所有 Android KeyEvent 和文本
+ui/soft_keyboard.py - 软键盘窗口 (Soft Keyboard Window)
+
+功能 (Features):
+    - 标准键盘布局，可点击发送按键 (Standard keyboard layout for sending keys)
+    - 所有 Android KeyEvent 常量的分组展示 (All Android KeyEvent constants grouped)
+    - 自定义文本或 keyevent 序列发送 (Send custom text or keyevent sequence)
+    - 支持字母、数字、方向、功能键、媒体控制等 (Supports letters, digits, arrows, function keys, media controls)
+
+依赖 (Dependencies): PyQt5, core.adb_client
 """
 
 from PyQt5.QtWidgets import (
@@ -15,7 +22,7 @@ from core.adb_client import AdbClient
 
 
 class SoftKeyboardWindow(QDialog):
-    """软键盘窗口"""
+    """软键盘窗口 (Soft keyboard dialog)"""
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
@@ -25,22 +32,23 @@ class SoftKeyboardWindow(QDialog):
         self.setMinimumSize(800, 600)
         self.init_ui()
 
+    # ========== UI 初始化 (UI Initialization) ==========
+
     def init_ui(self):
+        """创建对话框界面 (Create dialog UI)"""
         layout = QVBoxLayout(self)
 
-        # 选项卡
+        # 选项卡 (Tabs)
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
 
-        # 第一页：标准键盘
         self.standard_tab = self.create_standard_keyboard()
         self.tab_widget.addTab(self.standard_tab, "标准键盘")
 
-        # 第二页：所有 KeyEvent
         self.keyevent_tab = self.create_keyevent_tab()
         self.tab_widget.addTab(self.keyevent_tab, "所有按键")
 
-        # 底部：文本输入和发送
+        # 底部自定义输入区 (Bottom custom input area)
         bottom_layout = QHBoxLayout()
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("输入文本或 keyevent 代码 (多个用空格分隔，如 'KEYCODE_HOME KEYCODE_BACK' 或 '3 4')")
@@ -51,32 +59,35 @@ class SoftKeyboardWindow(QDialog):
         bottom_layout.addWidget(self.send_btn)
         layout.addLayout(bottom_layout)
 
+    # ========== 标准键盘 (Standard Keyboard) ==========
+
     def create_standard_keyboard(self) -> QWidget:
+        """创建标准键盘页面 (Create standard keyboard tab)"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         grid = QGridLayout()
         grid.setHorizontalSpacing(5)
         grid.setVerticalSpacing(5)
 
-        # 定义所有按键 (标签, 行, 列)
+        # 按键定义 (Key definitions: label, row, col)
         keys = [
-            # 数字行
+            # 数字行 (Number row)
             ("1", 0, 0), ("2", 0, 1), ("3", 0, 2), ("4", 0, 3), ("5", 0, 4),
             ("6", 0, 5), ("7", 0, 6), ("8", 0, 7), ("9", 0, 8), ("0", 0, 9),
-            # 第一行字母
+            # 第一行字母 (Q-P)
             ("Q", 1, 0), ("W", 1, 1), ("E", 1, 2), ("R", 1, 3), ("T", 1, 4),
             ("Y", 1, 5), ("U", 1, 6), ("I", 1, 7), ("O", 1, 8), ("P", 1, 9),
-            # 第二行字母
+            # 第二行字母 (A-L)
             ("A", 2, 0), ("S", 2, 1), ("D", 2, 2), ("F", 2, 3), ("G", 2, 4),
             ("H", 2, 5), ("J", 2, 6), ("K", 2, 7), ("L", 2, 8),
-            # 第三行字母
+            # 第三行字母 (Z-M)
             ("Z", 3, 0), ("X", 3, 1), ("C", 3, 2), ("V", 3, 3), ("B", 3, 4),
             ("N", 3, 5), ("M", 3, 6),
-            # 功能键
+            # 功能键 (Function keys)
             ("空格", 4, 0), ("回车", 4, 1), ("删除", 4, 2), ("Tab", 4, 3), ("ESC", 4, 4),
-            # 方向键
+            # 方向键 (Arrow keys)
             ("上", 5, 0), ("下", 5, 1), ("左", 5, 2), ("右", 5, 3),
-            # 系统键
+            # 系统键 (System keys)
             ("HOME", 6, 0), ("BACK", 6, 1), ("菜单", 6, 2), ("音量+", 6, 3),
             ("音量-", 6, 4), ("电源", 6, 5), ("相机", 6, 6),
             # F1-F12
@@ -87,7 +98,7 @@ class SoftKeyboardWindow(QDialog):
 
         for label, row, col in keys:
             btn = QPushButton(label)
-            btn.setFixedSize(80, 40)   # 固定宽度80像素，高度40像素
+            btn.setFixedSize(80, 40)   # 固定按钮大小 (Fixed button size)
             btn.setFont(QFont("Arial", 10))
             btn.clicked.connect(lambda checked, l=label: self.send_key_by_label(l))
             grid.addWidget(btn, row, col)
@@ -97,7 +108,7 @@ class SoftKeyboardWindow(QDialog):
         return widget
 
     def create_button_row(self, labels):
-        """创建一行按钮"""
+        """创建一行按钮 (Create a row of buttons)"""
         hbox = QHBoxLayout()
         for label in labels:
             btn = QPushButton(label)
@@ -106,8 +117,8 @@ class SoftKeyboardWindow(QDialog):
         hbox.addStretch()
         return hbox
 
-    def send_key_by_label(self, label):
-        """根据按钮标签发送对应的 keyevent"""
+    def send_key_by_label(self, label: str):
+        """根据按钮标签发送对应的 keyevent (Send keyevent by button label)"""
         mapping = {
             "1": "1", "2": "2", "3": "3", "4": "4", "5": "5",
             "6": "6", "7": "7", "8": "8", "9": "9", "0": "0",
@@ -130,8 +141,10 @@ class SoftKeyboardWindow(QDialog):
         keycode = mapping.get(label, label)
         self.send_keyevent(keycode)
 
+    # ========== 所有 KeyEvent (All KeyEvents) ==========
+
     def create_keyevent_tab(self) -> QWidget:
-        """第二页：所有 KeyEvent 常量（分组显示）"""
+        """创建所有 KeyEvent 按键页面 (Create all KeyEvent tab)"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
@@ -140,7 +153,6 @@ class SoftKeyboardWindow(QDialog):
         content = QWidget()
         grid_layout = QGridLayout(content)
 
-        # 获取所有 keyevent 常量（按类别分组）
         groups = self.get_keyevent_groups()
         row = 0
         for group_name, keys in groups.items():
@@ -159,11 +171,12 @@ class SoftKeyboardWindow(QDialog):
         return widget
 
     def get_keyevent_groups(self) -> dict:
-        """返回分组后的 KeyEvent 常量（基于 Android 14）"""
-        # 这里只列出常用的一部分，完整版需要从官方文档提取所有常量
-        # 为了完整性，我会提供一个包含大多数常量的字典
+        """
+        返回分组后的 KeyEvent 常量 (Return grouped KeyEvent constants)
+        基于 Android API 参考，列出了一部分常用常量。
+        """
         groups = {
-            "导航键": {
+            "导航键 (Navigation)": {
                 "KEYCODE_HOME": 3,
                 "KEYCODE_BACK": 4,
                 "KEYCODE_MENU": 82,
@@ -174,9 +187,9 @@ class SoftKeyboardWindow(QDialog):
                 "KEYCODE_DPAD_RIGHT": 22,
                 "KEYCODE_DPAD_CENTER": 23,
             },
-            "字母键": {f"KEYCODE_{chr(65+i)}": 29+i for i in range(26)},
-            "数字键": {f"KEYCODE_{i}": 7+i for i in range(10)},
-            "功能键": {
+            "字母键 (Letters)": {f"KEYCODE_{chr(65+i)}": 29+i for i in range(26)},
+            "数字键 (Digits)": {f"KEYCODE_{i}": 7+i for i in range(10)},
+            "功能键 (Function Keys)": {
                 "KEYCODE_F1": 131, "KEYCODE_F2": 132, "KEYCODE_F3": 133,
                 "KEYCODE_F4": 134, "KEYCODE_F5": 135, "KEYCODE_F6": 136,
                 "KEYCODE_F7": 137, "KEYCODE_F8": 138, "KEYCODE_F9": 139,
@@ -186,7 +199,7 @@ class SoftKeyboardWindow(QDialog):
                 "KEYCODE_F19": 149, "KEYCODE_F20": 150, "KEYCODE_F21": 151,
                 "KEYCODE_F22": 152, "KEYCODE_F23": 153, "KEYCODE_F24": 154,
             },
-            "修饰键": {
+            "修饰键 (Modifiers)": {
                 "KEYCODE_SHIFT_LEFT": 59, "KEYCODE_SHIFT_RIGHT": 60,
                 "KEYCODE_CTRL_LEFT": 113, "KEYCODE_CTRL_RIGHT": 114,
                 "KEYCODE_ALT_LEFT": 57, "KEYCODE_ALT_RIGHT": 58,
@@ -194,7 +207,7 @@ class SoftKeyboardWindow(QDialog):
                 "KEYCODE_CAPS_LOCK": 115, "KEYCODE_NUM_LOCK": 143,
                 "KEYCODE_SCROLL_LOCK": 116,
             },
-            "媒体控制": {
+            "媒体控制 (Media)": {
                 "KEYCODE_MEDIA_PLAY_PAUSE": 85,
                 "KEYCODE_MEDIA_STOP": 86,
                 "KEYCODE_MEDIA_NEXT": 87,
@@ -205,7 +218,7 @@ class SoftKeyboardWindow(QDialog):
                 "KEYCODE_VOLUME_DOWN": 25,
                 "KEYCODE_VOLUME_MUTE": 164,
             },
-            "其他": {
+            "其他 (Others)": {
                 "KEYCODE_ENTER": 66,
                 "KEYCODE_DEL": 67,
                 "KEYCODE_TAB": 61,
@@ -225,36 +238,41 @@ class SoftKeyboardWindow(QDialog):
         }
         return groups
 
-    def send_keyevent(self, keycode):
-        """发送单个 keyevent"""
+    # ========== 发送逻辑 (Send Logic) ==========
+
+    def send_keyevent(self, keycode: str):
+        """发送单个 keyevent (Send a single keyevent)"""
         self.adb_client.send_keyevent(keycode, self.serial)
         self.status_message(f"发送按键: {keycode}")
 
     def send_custom(self):
-        """发送自定义输入（文本或 keyevent 序列）"""
+        """发送自定义输入：文本或 keyevent 序列 (Send custom text or keyevent sequence)"""
         text = self.text_input.text().strip()
         if not text:
             return
-        # 如果文本包含空格，可能是多个 keyevent
         parts = text.split()
         if len(parts) > 1:
-            # 尝试作为 keyevent 序列发送
+            # 多个 keyevent 序列 (Multiple keyevents)
             for part in parts:
                 self.adb_client.send_keyevent(part, self.serial)
             self.status_message(f"发送按键序列: {text}")
         else:
-            # 检查是否为 keyevent（数字或 KEYCODE_ 开头）
+            # 单个 keyevent 或文本 (Single keyevent or text)
             if text.isdigit() or text.upper().startswith("KEYCODE_"):
                 self.adb_client.send_keyevent(text, self.serial)
                 self.status_message(f"发送按键: {text}")
             else:
-                # 作为普通文本发送
                 self.adb_client.send_text(text, self.serial)
                 self.status_message(f"发送文本: {text}")
         self.text_input.clear()
 
+    # ========== 状态反馈 (Status Feedback) ==========
+
     def status_message(self, msg: str):
-        """显示状态信息（可被父窗口捕获）"""
+        """
+        输出状态信息，尝试通过父窗口的信号传递。
+        Send status message; attempt to emit through parent's signal if available.
+        """
         if hasattr(self.parent(), 'status_message'):
             self.parent().status_message.emit(msg)
         else:

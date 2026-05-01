@@ -1,16 +1,16 @@
 """
-ui/apps_tab.py - 应用管理控件（带图标异步加载）
+ui/apps_tab.py - 应用管理控件 (App Management Tab)
 
-功能：
-    - 两个选项卡：系统应用、用户应用
-    - 应用列表显示（图标、应用名称、包名）
-    - 搜索过滤（支持正则表达式）
-    - 右键菜单：复制包名、卸载、清除数据、导出APK
-    - 支持多选应用
-    - 拖拽安装APK
-    - 后台异步加载应用图标并缓存到本地
+功能 (Features):
+    - 系统应用 / 用户应用分选项卡展示 (System & user app tabs)
+    - 应用列表：图标、名称、包名 (App list: icon, name, package)
+    - 搜索过滤，支持正则表达式 (Search filter with regex support)
+    - 右键菜单：复制包名、卸载、清除数据、导出APK、运行/以root运行
+    - 多选应用批量操作 (Multi-select support)
+    - 拖拽安装APK (Drag & drop APK install)
+    - 后台异步加载应用图标并缓存到本地 (Async icon loading with local cache)
 
-依赖：PyQt5, core.adb_client
+依赖 (Dependencies): PyQt5, core.adb_client
 """
 
 import re
@@ -32,8 +32,11 @@ from core.adb_client import AdbClient
 
 
 class IconLoaderThread(QThread):
-    """后台线程：从设备获取图标数据"""
-    icon_ready = pyqtSignal(str, bytes)      # package, icon_data
+    """
+    后台线程：从设备获取图标数据 (Background thread: fetch app icon from device)
+    """
+
+    icon_ready = pyqtSignal(str, bytes)   # (package, icon_data)
 
     def __init__(self, adb_client: AdbClient, package: str, apk_path: str, serial: str):
         super().__init__()
@@ -52,7 +55,7 @@ class IconLoaderThread(QThread):
 
 
 class AppsTab(QWidget):
-    """应用管理控件"""
+    """应用管理控件 (App management widget)"""
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
@@ -62,21 +65,24 @@ class AppsTab(QWidget):
         self.user_apps: List[Dict] = []
         self.current_filter = ""
         self.use_regex = False
-        self.icon_queue = []         # [(package, apk_path, table, row), ...]
-        self.icon_workers = []       # 正在运行的 IconLoaderThread
+        self.icon_queue = []           # [(package, apk_path, table, row), ...]
+        self.icon_workers = []         # 正在运行的 IconLoaderThread
         self.icon_loading_active = False
 
-        # 每个设备独立的缓存目录
+        # 每个设备独立的缓存目录 (Per-device cache directory)
         self.ICON_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache" / "app_icons" / self.serial
         self.ICON_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
         self.init_ui()
-        QTimer.singleShot(0, self.load_apps)
+        QTimer.singleShot(0, self.load_apps)   # 延迟加载，避免阻塞窗口显示
 
-    # ---------- UI 初始化 ----------
+    # ========== UI 初始化 (UI Initialization) ==========
+
     def init_ui(self):
+        """创建界面布局 (Create UI layout)"""
         layout = QVBoxLayout(self)
 
+        # ---- 搜索栏 (Search bar) ----
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("搜索应用名称或包名... (支持正则表达式)")
@@ -92,6 +98,7 @@ class AppsTab(QWidget):
         search_layout.addWidget(self.refresh_btn)
         layout.addLayout(search_layout)
 
+        # ---- 选项卡 (Tabs) ----
         self.tab_widget = QTabWidget()
         self.system_tab = QWidget()
         self.user_tab = QWidget()
@@ -99,21 +106,23 @@ class AppsTab(QWidget):
         self.tab_widget.addTab(self.user_tab, "用户应用")
         layout.addWidget(self.tab_widget)
 
+        # ---- 表格 (Tables) ----
         self.system_table = self.create_app_table()
         self.user_table = self.create_app_table()
         self.setup_table_layout(self.system_tab, self.system_table)
         self.setup_table_layout(self.user_tab, self.user_table)
 
-        self.setAcceptDrops(True)
+        self.setAcceptDrops(True)   # 启用拖拽安装
 
     def create_app_table(self) -> QTableWidget:
+        """创建应用表格 (Create app table widget)"""
         table = QTableWidget()
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["", "应用名称", "包名"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        table.setColumnWidth(0, 32)
-        table.setColumnWidth(1, 200)
-        table.setColumnWidth(2, 500)
+        table.setColumnWidth(0, 32)     # 图标列
+        table.setColumnWidth(1, 200)    # 应用名称
+        table.setColumnWidth(2, 500)    # 包名
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.setSelectionMode(QTableWidget.ExtendedSelection)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -126,18 +135,22 @@ class AppsTab(QWidget):
         return table
 
     def setup_table_layout(self, parent, table):
+        """将表格嵌入父布局 (Embed table into parent layout)"""
         layout = QVBoxLayout(parent)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(table)
 
-    # ---------- 应用加载与解析 ----------
+    # ========== 应用加载与解析 (Load & Parse) ==========
+
     def load_apps(self):
+        """加载应用列表 (Load app list from device)"""
         self.refresh_btn.setEnabled(False)
         self.refresh_btn.setText("加载中...")
+        # 清空待加载图标队列，停止工作线程
         self.icon_queue.clear()
         self._stop_icon_workers()
 
-        # 用户应用
+        # 用户应用 (User apps)
         try:
             user_out = self.adb_client.shell_sync("pm list packages -f -3", self.serial, timeout=10)
             self.user_apps = self._parse_packages(user_out)
@@ -146,7 +159,7 @@ class AppsTab(QWidget):
             print(f"[AppsTab] Error loading user apps: {e}")
             self.user_apps = []
 
-        # 系统应用
+        # 系统应用 (System apps)
         try:
             sys_out = self.adb_client.shell_sync("pm list packages -f -s", self.serial, timeout=10)
             self.system_apps = self._parse_packages(sys_out)
@@ -157,9 +170,13 @@ class AppsTab(QWidget):
 
         self.refresh_btn.setEnabled(True)
         self.refresh_btn.setText("刷新")
-        self._start_icon_loading()
+        self._start_icon_loading()   # 开始异步加载图标
 
     def _parse_packages(self, output: str) -> List[Dict]:
+        """
+        解析 pm list packages -f 输出 (Parse pm list packages output)
+        格式: package:/system/app/SomeApp/SomeApp.apk=com.example.app
+        """
         packages = []
         for line in output.splitlines():
             line = line.strip()
@@ -178,35 +195,41 @@ class AppsTab(QWidget):
         return packages
 
     def _get_app_name_from_package(self, pkg: str) -> str:
+        """从包名中提取简易应用名 (Extract a simple app name from package)"""
         parts = pkg.split('.')
         return parts[-1] if parts else pkg
 
-    # ---------- 表格填充 ----------
+    # ========== 表格填充 (Table Population) ==========
+
     def populate_table(self, table: QTableWidget, apps: List[Dict], app_type: str = ""):
+        """将应用列表填充到表格 (Populate table with apps)"""
         filtered = self.filter_apps(apps)
         filtered.sort(key=lambda x: x.get("name", "").lower())
         table.setRowCount(len(filtered))
         for row, app in enumerate(filtered):
-            # 图标列
+            # 图标列 (Icon column)
             icon_item = QTableWidgetItem()
             cached = self._get_cached_icon(app["package"])
             if cached:
                 icon_item.setIcon(cached)
             else:
+                # 使用默认图标，并加入异步加载队列
                 icon_item.setIcon(self.style().standardIcon(QStyle.SP_FileIcon))
                 self.icon_queue.append((app["package"], app["apk_path"], table, row))
             table.setItem(row, 0, icon_item)
 
-            # 应用名称列
+            # 应用名称列 (App name column)
             name_item = QTableWidgetItem(app.get("name", ""))
             name_item.setData(Qt.UserRole, app["package"])
             table.setItem(row, 1, name_item)
 
-            # 包名列
+            # 包名列 (Package name column)
             table.setItem(row, 2, QTableWidgetItem(app["package"]))
 
-    # ---------- 图标缓存与异步加载 ----------
+    # ========== 图标缓存与异步加载 (Icon Caching & Async Loading) ==========
+
     def _get_cached_icon(self, package: str) -> Optional[QIcon]:
+        """从本地缓存加载图标 (Load icon from local cache)"""
         icon_path = self.ICON_CACHE_DIR / f"{package}.png"
         if icon_path.exists():
             pixmap = QPixmap(str(icon_path))
@@ -215,12 +238,14 @@ class AppsTab(QWidget):
         return None
 
     def _start_icon_loading(self):
+        """启动图标异步加载 (Start async icon loading)"""
         if not self.icon_queue:
             return
         self.icon_loading_active = True
         self._process_icon_queue()
 
     def _stop_icon_workers(self):
+        """停止所有图标加载线程 (Stop all icon loading threads)"""
         self.icon_loading_active = False
         for worker in self.icon_workers:
             if worker.isRunning():
@@ -229,10 +254,11 @@ class AppsTab(QWidget):
         self.icon_workers.clear()
 
     def _process_icon_queue(self):
+        """处理图标加载队列 (Process icon loading queue)"""
         if not self.icon_loading_active or not self.icon_queue:
             self.icon_loading_active = False
             return
-        max_workers = 3
+        max_workers = 3   # 最多同时运行3个线程
         while len(self.icon_workers) < max_workers and self.icon_queue:
             package, apk_path, table, row = self.icon_queue.pop(0)
             worker = IconLoaderThread(self.adb_client, package, apk_path, self.serial)
@@ -242,14 +268,15 @@ class AppsTab(QWidget):
             worker.start()
 
     def _on_icon_loaded(self, package: str, data: bytes):
-        # 写入缓存
+        """图标加载完成 (Callback when icon is loaded)"""
+        # 写入缓存 (Save to cache)
         icon_path = self.ICON_CACHE_DIR / f"{package}.png"
         try:
             with open(icon_path, "wb") as f:
                 f.write(data)
         except Exception as e:
             print(f"Failed to cache icon for {package}: {e}")
-        # 更新 UI
+        # 更新 UI (Update table icons)
         pixmap = QPixmap()
         pixmap.loadFromData(data)
         scaled = pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -258,6 +285,7 @@ class AppsTab(QWidget):
         self._update_icon_in_table(self.system_table, package, icon)
 
     def _update_icon_in_table(self, table: QTableWidget, package: str, icon: QIcon):
+        """更新表格中指定包名的图标 (Update icon for a package in table)"""
         for row in range(table.rowCount()):
             item = table.item(row, 1)
             if item and item.data(Qt.UserRole) == package:
@@ -266,13 +294,16 @@ class AppsTab(QWidget):
                     icon_item.setIcon(icon)
 
     def _worker_finished(self, worker):
+        """工作线程结束，清理并继续处理队列 (Worker finished callback)"""
         if worker in self.icon_workers:
             self.icon_workers.remove(worker)
         worker.deleteLater()
         self._process_icon_queue()
 
-    # ---------- 搜索与过滤 ----------
+    # ========== 搜索与过滤 (Search & Filter) ==========
+
     def filter_apps(self, apps: List[Dict]) -> List[Dict]:
+        """根据当前搜索文本过滤应用 (Filter apps by search text)"""
         if not self.current_filter:
             return apps
         try:
@@ -295,13 +326,16 @@ class AppsTab(QWidget):
         self.refresh_display()
 
     def refresh_display(self):
+        """刷新两个表格的显示 (Refresh both tables)"""
         if self.user_apps is not None:
             self.populate_table(self.user_table, self.user_apps)
         if self.system_apps is not None:
             self.populate_table(self.system_table, self.system_apps)
 
-    # ---------- 右键菜单 ----------
+    # ========== 右键菜单 (Context Menu) ==========
+
     def show_context_menu(self, position):
+        """显示右键菜单 (Show context menu)"""
         table = self.sender()
         if not isinstance(table, QTableWidget):
             return
@@ -311,7 +345,7 @@ class AppsTab(QWidget):
         packages = set()
         for item in selected_rows:
             row = item.row()
-            pkg_item = table.item(row, 2)
+            pkg_item = table.item(row, 2)   # 包名在第3列
             if pkg_item:
                 packages.add(pkg_item.text())
         if not packages:
@@ -329,6 +363,7 @@ class AppsTab(QWidget):
         clear_data_action = QAction("清除数据", self)
         clear_data_action.triggered.connect(lambda: self.clear_app_data(packages))
         menu.addAction(clear_data_action)
+
         menu.addSeparator()
 
         run_action = QAction("运行", self)
@@ -338,7 +373,7 @@ class AppsTab(QWidget):
         run_root_action = QAction("以 root 权限运行", self)
         run_root_action.triggered.connect(lambda: self.run_apps(packages, as_root=True))
         menu.addAction(run_root_action)
-        
+
         export_action = QAction("导出APK", self)
         export_action.triggered.connect(lambda: self.export_apks(packages))
         menu.addAction(export_action)
@@ -346,12 +381,15 @@ class AppsTab(QWidget):
         menu.exec_(table.viewport().mapToGlobal(position))
 
     def copy_package_names(self, packages: set):
+        """复制包名到剪贴板 (Copy package names to clipboard)"""
         clipboard = QApplication.clipboard()
         clipboard.setText("\n".join(packages))
         QMessageBox.information(self, "提示", f"已复制 {len(packages)} 个包名到剪贴板")
 
-    # ---------- 应用操作 ----------
+    # ========== 应用操作 (App Operations) ==========
+
     def uninstall_apps(self, packages: set):
+        """卸载选中的应用 (Uninstall selected apps)"""
         if not packages:
             return
         pkg_list = "\n".join(packages)
@@ -370,6 +408,7 @@ class AppsTab(QWidget):
             QMessageBox.warning(self, "卸载失败", f"卸载 {pkg} 失败:\n{stderr}")
 
     def clear_app_data(self, packages: set):
+        """清除选中应用的数据 (Clear app data)"""
         if not packages:
             return
         pkg_list = "\n".join(packages)
@@ -387,6 +426,7 @@ class AppsTab(QWidget):
             QMessageBox.warning(self, "清除失败", f"清除 {pkg} 数据失败:\n{stderr}")
 
     def export_apks(self, packages: set):
+        """导出选中应用的APK文件 (Export APK files)"""
         if not packages:
             return
         dir_path = QFileDialog.getExistingDirectory(self, "选择保存目录")
@@ -409,8 +449,31 @@ class AppsTab(QWidget):
         else:
             QMessageBox.warning(self, "导出失败", f"导出 {pkg} 失败:\n{stderr}")
 
-    # ---------- 拖拽安装 ----------
+    def run_apps(self, packages: set, as_root: bool = False):
+        """
+        启动应用（支持普通运行或 root 运行）
+        Launch app (with optional root)
+        """
+        if not packages:
+            return
+        for pkg in packages:
+            if as_root:
+                cmd = f"su -c 'am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)'"
+            else:
+                cmd = f"am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)"
+            self.adb_client.shell(cmd, self.serial,
+                                  callback=lambda code, out, err, p=pkg: self._on_run_finished(code, out, err, p))
+
+    def _on_run_finished(self, exit_code, stdout, stderr, pkg):
+        if exit_code == 0:
+            QMessageBox.information(self, "启动成功", f"应用 {pkg} 已启动")
+        else:
+            QMessageBox.warning(self, "启动失败", f"启动 {pkg} 失败:\n{stderr}")
+
+    # ========== 拖拽安装 (Drag & Drop Install) ==========
+
     def dragEnterEvent(self, event: QDragEnterEvent):
+        """拖拽进入事件：接受 .apk 文件"""
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
                 if url.toLocalFile().endswith('.apk'):
@@ -419,6 +482,7 @@ class AppsTab(QWidget):
         event.ignore()
 
     def dropEvent(self, event: QDropEvent):
+        """拖拽放下事件：安装 APK"""
         apk_paths = []
         for url in event.mimeData().urls():
             path = url.toLocalFile()
@@ -428,6 +492,7 @@ class AppsTab(QWidget):
             self.install_apks(apk_paths)
 
     def install_apks(self, apk_paths: List[str]):
+        """安装一个或多个 APK 文件"""
         if not apk_paths:
             return
         reply = QMessageBox.question(self, "确认安装", f"确定要安装 {len(apk_paths)} 个APK吗？",
@@ -474,24 +539,6 @@ class AppsTab(QWidget):
                 QMessageBox.information(self, "取消", f"已取消安装 {filename}")
             elif success:
                 QMessageBox.information(self, "安装成功", f"{filename} 安装成功")
-                self.load_apps()
+                self.load_apps()   # 刷新列表
             else:
                 QMessageBox.warning(self, "安装失败", f"{filename} 安装失败\n{error_msg}")
-
-    def run_apps(self, packages: set, as_root: bool = False):
-        """启动应用（支持普通运行或 root 运行）"""
-        if not packages:
-            return
-        for pkg in packages:
-            if as_root:
-                cmd = f"su -c 'am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)'"
-            else:
-                cmd = f"am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)"
-            self.adb_client.shell(cmd, self.serial,
-                                  callback=lambda code, out, err, p=pkg: self._on_run_finished(code, out, err, p))
-
-    def _on_run_finished(self, exit_code, stdout, stderr, pkg):
-        if exit_code == 0:
-            self.status_message.emit(f"已启动 {pkg}")
-        else:
-            self.status_message.emit(f"启动 {pkg} 失败: {stderr}")

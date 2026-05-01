@@ -1,11 +1,13 @@
 """
-ui/proxy_tab.py - 设备代理设置控件
+ui/proxy_tab.py - 设备代理设置控件 (Device Proxy Settings)
 
-功能：
-    - 显示当前全局 HTTP 代理
-    - 设置代理（主机:端口）
-    - 清除代理
-    - 状态提示
+功能 (Features):
+    - 显示当前全局 HTTP 代理 (Display current global HTTP proxy)
+    - 设置代理（主机:端口） (Set proxy via host:port)
+    - 清除代理 (Clear proxy)
+    - 操作状态反馈 (Operation status feedback)
+
+依赖 (Dependencies): PyQt5, core.adb_client
 """
 
 from PyQt5.QtWidgets import (
@@ -13,12 +15,13 @@ from PyQt5.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QMessageBox, QGroupBox
 )
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont
 
 from core.adb_client import AdbClient
 
 
 class ProxyTab(QWidget):
+    """代理设置控件 (Proxy settings widget)"""
+
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
         self.serial = serial
@@ -27,10 +30,13 @@ class ProxyTab(QWidget):
         self.init_ui()
         self.load_proxy_status()
 
+    # ========== UI 初始化 (UI Initialization) ==========
+
     def init_ui(self):
+        """创建界面布局 (Create UI layout)"""
         layout = QVBoxLayout(self)
 
-        # 当前代理状态组
+        # ---- 当前代理状态 (Current proxy status) ----
         status_group = QGroupBox("当前代理")
         status_layout = QFormLayout()
         self.current_proxy_label = QLabel("未设置")
@@ -39,9 +45,10 @@ class ProxyTab(QWidget):
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)
 
-        # 设置代理组
+        # ---- 设置代理 (Set proxy) ----
         set_group = QGroupBox("设置代理")
         set_layout = QFormLayout()
+
         self.host_edit = QLineEdit()
         self.host_edit.setPlaceholderText("例如 192.168.1.100 或 proxy.example.com")
         self.port_edit = QLineEdit()
@@ -62,7 +69,7 @@ class ProxyTab(QWidget):
         set_group.setLayout(set_layout)
         layout.addWidget(set_group)
 
-        # 状态消息
+        # ---- 状态消息 (Status message) ----
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("color: gray;")
@@ -70,8 +77,10 @@ class ProxyTab(QWidget):
 
         layout.addStretch()
 
+    # ========== 代理状态 (Proxy Status) ==========
+
     def load_proxy_status(self):
-        """读取设备当前代理并显示"""
+        """读取设备当前代理并显示 (Read and display current proxy)"""
         try:
             out = self.adb_client.shell_sync("settings get global http_proxy", self.serial, timeout=3)
             proxy = out.strip()
@@ -82,7 +91,10 @@ class ProxyTab(QWidget):
         except Exception:
             self.current_proxy_label.setText("读取失败")
 
+    # ========== 设置与清除 (Set & Clear) ==========
+
     def set_proxy(self):
+        """设置设备全局 HTTP 代理 (Set global HTTP proxy on device)"""
         host = self.host_edit.text().strip()
         port = self.port_edit.text().strip()
         if not host or not port:
@@ -105,13 +117,17 @@ class ProxyTab(QWidget):
         QMessageBox.information(self, "设置成功", f"代理已设置为 {proxy_value}")
 
     def clear_proxy(self):
-        reply = QMessageBox.question(self, "确认", "确定要清除代理设置吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+        """清除设备全局 HTTP 代理 (Clear global HTTP proxy)"""
+        reply = QMessageBox.question(
+            self, "确认",
+            "确定要清除代理设置吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply != QMessageBox.Yes:
             return
 
         self.status_label.setText("正在清除代理...")
-        # 使用 :0 表示禁用代理，某些设备可能需要 delete，这里用 put global http_proxy :0
+        # 使用 :0 表示禁用代理 (Use :0 to disable proxy)
         self.adb_client.shell_sync(
             "settings put global http_proxy :0",
             self.serial,
