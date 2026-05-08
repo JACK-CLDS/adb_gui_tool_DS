@@ -9,6 +9,10 @@ ui/process_manager.py - 进程管理控件 (Process Manager)
     - 可调整刷新间隔 (Adjustable refresh interval)
     - 根据进程状态着色 (Color-coded process states)
 
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
+
 依赖 (Dependencies): PyQt5, core.adb_client
 """
 
@@ -27,7 +31,7 @@ from core.adb_client import AdbClient
 class ProcessManager(QWidget):
     """进程管理控件 (Process manager widget)"""
 
-    status_message = pyqtSignal(str)   # 状态栏消息信号
+    status_message = pyqtSignal(str)   # 状态栏消息信号 (Status bar message signal)
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
@@ -36,7 +40,7 @@ class ProcessManager(QWidget):
         self.processes: List[Dict] = []
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.load_processes)
-        self.refresh_interval = 3000   # 默认刷新间隔 3 秒
+        self.refresh_interval = 3000   # 默认刷新间隔 3 秒 (Default 3 seconds)
         self.init_ui()
 
         # 延迟加载和启动定时器，避免阻塞窗口打开 (Defer loading to avoid UI freeze)
@@ -56,7 +60,9 @@ class ProcessManager(QWidget):
         """
         self.refresh_interval = interval
         self.refresh_timer.start(interval)
-        self.status_message.emit(f"刷新间隔已设为 {interval} ms")
+        self.status_message.emit(
+            self.tr("刷新间隔已设为 {interval} ms").format(interval=interval)
+        )
 
     # ========== UI 初始化 (UI Initialization) ==========
 
@@ -68,21 +74,21 @@ class ProcessManager(QWidget):
         control_layout = QHBoxLayout()
 
         self.filter_input = QLineEdit()
-        self.filter_input.setPlaceholderText("过滤进程名...")
+        self.filter_input.setPlaceholderText(self.tr("过滤进程名..."))
         self.filter_input.textChanged.connect(self.filter_processes)
-        control_layout.addWidget(QLabel("过滤:"))
+        control_layout.addWidget(QLabel(self.tr("过滤:")))
         control_layout.addWidget(self.filter_input)
 
-        self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn = QPushButton(self.tr("刷新"))
         self.refresh_btn.clicked.connect(self.load_processes)
         control_layout.addWidget(self.refresh_btn)
 
-        self.kill_btn = QPushButton("杀死选中进程")
+        self.kill_btn = QPushButton(self.tr("杀死选中进程"))
         self.kill_btn.clicked.connect(self.kill_selected_process)
         control_layout.addWidget(self.kill_btn)
 
         # 刷新频率设置 (Refresh interval spin box)
-        control_layout.addWidget(QLabel("刷新间隔(ms):"))
+        control_layout.addWidget(QLabel(self.tr("刷新间隔(ms):")))
         self.interval_spin = QSpinBox()
         self.interval_spin.setRange(1000, 10000)
         self.interval_spin.setValue(self.refresh_interval)
@@ -94,7 +100,12 @@ class ProcessManager(QWidget):
         # ---- 进程列表表格 (Process table) ----
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["PID", "进程名", "内存占用", "状态"])
+        self.table.setHorizontalHeaderLabels([
+            self.tr("PID"),
+            self.tr("进程名"),
+            self.tr("内存占用"),
+            self.tr("状态")
+        ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
@@ -107,8 +118,9 @@ class ProcessManager(QWidget):
 
     def load_processes(self):
         """从设备获取进程列表 (Fetch process list from device)"""
-        self.status_message.emit("正在获取进程列表...")
+        self.status_message.emit(self.tr("正在获取进程列表..."))
         # 使用基础 ps 命令，兼容所有 Android 版本
+        # Use basic ps command, compatible with all Android versions
         out = self.adb_client.shell_sync("ps", self.serial, timeout=5)
         self.processes = self._parse_ps_output_old(out)
         self.filter_processes()
@@ -142,7 +154,9 @@ class ProcessManager(QWidget):
             self.table.setItem(row, 2, mem_item)
             self.table.setItem(row, 3, state_item)
 
-        self.status_message.emit(f"已加载 {len(filtered)} 个进程")
+        self.status_message.emit(
+            self.tr("已加载 {count} 个进程").format(count=len(filtered))
+        )
 
     # ========== 进程操作 (Process Operations) ==========
 
@@ -152,7 +166,11 @@ class ProcessManager(QWidget):
         for item in self.table.selectedItems():
             selected_rows.add(item.row())
         if not selected_rows:
-            QMessageBox.warning(self, "提示", "请先选中要杀死的进程")
+            QMessageBox.warning(
+                self,
+                self.tr("提示"),
+                self.tr("请先选中要杀死的进程")
+            )
             return
 
         pids = []
@@ -164,27 +182,31 @@ class ProcessManager(QWidget):
             return
 
         reply = QMessageBox.question(
-            self, "确认杀死", f"确定要杀死 {len(pids)} 个进程吗？",
+            self,
+            self.tr("确认杀死"),
+            self.tr("确定要杀死 {count} 个进程吗？").format(count=len(pids)),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
             for pid in pids:
                 self.adb_client.shell_sync(f"kill -9 {pid}", self.serial, timeout=2)
-                self.status_message.emit(f"已杀死进程 {pid}")
-            self.load_processes()   # 刷新列表
+                self.status_message.emit(
+                    self.tr("已杀死进程 {pid}").format(pid=pid)
+                )
+            self.load_processes()   # 刷新列表 (Refresh list)
 
     def show_context_menu(self, position):
         """显示右键菜单 (Show context menu)"""
         menu = QMenu()
-        copy_pid = QAction("复制 PID", self)
+        copy_pid = QAction(self.tr("复制 PID"), self)
         copy_pid.triggered.connect(self.copy_selected_pid)
         menu.addAction(copy_pid)
 
-        copy_name = QAction("复制进程名", self)
+        copy_name = QAction(self.tr("复制进程名"), self)
         copy_name.triggered.connect(self.copy_selected_name)
         menu.addAction(copy_name)
 
-        kill_action = QAction("杀死进程", self)
+        kill_action = QAction(self.tr("杀死进程"), self)
         kill_action.triggered.connect(self.kill_selected_process)
         menu.addAction(kill_action)
 
@@ -195,20 +217,30 @@ class ProcessManager(QWidget):
         selected = self.table.selectedItems()
         if not selected:
             return
-        pids = [self.table.item(item.row(), 0).text() for item in selected if self.table.item(item.row(), 0)]
+        pids = [
+            self.table.item(item.row(), 0).text()
+            for item in selected if self.table.item(item.row(), 0)
+        ]
         if pids:
             QApplication.clipboard().setText("\n".join(pids))
-            self.status_message.emit(f"已复制 {len(pids)} 个 PID")
+            self.status_message.emit(
+                self.tr("已复制 {count} 个 PID").format(count=len(pids))
+            )
 
     def copy_selected_name(self):
         """复制选中行的进程名到剪贴板 (Copy selected process names to clipboard)"""
         selected = self.table.selectedItems()
         if not selected:
             return
-        names = [self.table.item(item.row(), 1).text() for item in selected if self.table.item(item.row(), 1)]
+        names = [
+            self.table.item(item.row(), 1).text()
+            for item in selected if self.table.item(item.row(), 1)
+        ]
         if names:
             QApplication.clipboard().setText("\n".join(names))
-            self.status_message.emit(f"已复制 {len(names)} 个进程名")
+            self.status_message.emit(
+                self.tr("已复制 {count} 个进程名").format(count=len(names))
+            )
 
     # ========== PS 输出解析 (PS Output Parsers) ==========
 
@@ -220,7 +252,7 @@ class ProcessManager(QWidget):
         """
         processes = []
         lines = output.splitlines()
-        for line in lines[1:]:   # 跳过标题行
+        for line in lines[1:]:   # 跳过标题行 (Skip header line)
             parts = line.split()
             if len(parts) >= 9:
                 pid = parts[1]
@@ -240,7 +272,7 @@ class ProcessManager(QWidget):
         """
         解析新版 ps 输出（带 -o 选项）
         Parse new ps output format (with -o option).
-        预留实现。
+        预留实现 (Reserved for future implementation).
         """
         processes = []
         lines = output.splitlines()

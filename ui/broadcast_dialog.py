@@ -6,6 +6,10 @@ ui/broadcast_dialog.py - 发送广播对话框 (Send Broadcast Dialog)
     - 可选附加 extra 键值对 (Optional extra key-value pair)
     - 执行 adb shell am broadcast 并显示输出 (Execute and display output)
 
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
+
 依赖 (Dependencies): PyQt5, core.adb_client
 """
 
@@ -27,7 +31,7 @@ class BroadcastDialog(QDialog):
         self.serial = serial
         self.adb_client = adb_client
 
-        self.setWindowTitle("发送广播")
+        self.setWindowTitle(self.tr("发送广播"))
         self.setMinimumWidth(500)
         self.init_ui()
 
@@ -41,30 +45,34 @@ class BroadcastDialog(QDialog):
 
         # Action 输入 (Action input)
         self.action_edit = QLineEdit()
-        self.action_edit.setPlaceholderText("例如：android.intent.action.AIRPLANE_MODE")
-        form.addRow("Action:", self.action_edit)
+        self.action_edit.setPlaceholderText(
+            self.tr("例如：android.intent.action.AIRPLANE_MODE")
+        )
+        form.addRow(self.tr("Action:"), self.action_edit)
 
         # Extra 参数 (Extra parameters)
         self.extra_key_edit = QLineEdit()
-        self.extra_key_edit.setPlaceholderText("键名")
+        self.extra_key_edit.setPlaceholderText(self.tr("键名"))
         self.extra_type_combo = QComboBox()
-        self.extra_type_combo.addItems(["string", "int", "boolean", "float"])
+        self.extra_type_combo.addItems([
+            "string", "int", "boolean", "float"
+        ])   # 类型列表不翻译 (Type names are identifiers)
         self.extra_value_edit = QLineEdit()
-        self.extra_value_edit.setPlaceholderText("值")
+        self.extra_value_edit.setPlaceholderText(self.tr("值"))
 
         extra_layout = QHBoxLayout()
-        extra_layout.addWidget(QLabel("键:"))
+        extra_layout.addWidget(QLabel(self.tr("键:")))
         extra_layout.addWidget(self.extra_key_edit)
-        extra_layout.addWidget(QLabel("类型:"))
+        extra_layout.addWidget(QLabel(self.tr("类型:")))
         extra_layout.addWidget(self.extra_type_combo)
-        extra_layout.addWidget(QLabel("值:"))
+        extra_layout.addWidget(QLabel(self.tr("值:")))
         extra_layout.addWidget(self.extra_value_edit)
-        form.addRow("Extra:", extra_layout)
+        form.addRow(self.tr("Extra:"), extra_layout)
 
         layout.addLayout(form)
 
         # 发送按钮 (Send button)
-        self.send_btn = QPushButton("发送广播")
+        self.send_btn = QPushButton(self.tr("发送广播"))
         self.send_btn.clicked.connect(self.send_broadcast)
         layout.addWidget(self.send_btn)
 
@@ -79,7 +87,11 @@ class BroadcastDialog(QDialog):
         """构建并发送广播命令 (Build and send broadcast command)"""
         action = self.action_edit.text().strip()
         if not action:
-            QMessageBox.warning(self, "输入不完整", "请输入 Action")
+            QMessageBox.warning(
+                self,
+                self.tr("输入不完整"),
+                self.tr("请输入 Action")
+            )
             return
 
         # 基础命令 (Base command)
@@ -101,6 +113,8 @@ class BroadcastDialog(QDialog):
                 cmd += f" --ef {extra_key} {extra_value}"
 
         # 执行命令并显示结果 (Execute and display)
-        self.output_text.append(f">>> 执行: {cmd}")
+        self.output_text.append(
+            self.tr(">>> 执行: {cmd}").format(cmd=cmd)
+        )
         out = self.adb_client.shell_sync(cmd, self.serial, timeout=5)
         self.output_text.append(out)

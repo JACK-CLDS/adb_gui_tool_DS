@@ -10,6 +10,10 @@ ui/file_manager.py - 文件管理控件 (File Manager Widget)
     - 符号链接自动解析 (Symbolic link resolution)
     - 键盘按键快速定位文件 (Single key press quick locate)
 
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
+
 依赖 (Dependencies): PyQt5, core.adb_client
 """
 
@@ -30,7 +34,7 @@ from core.adb_client import AdbClient
 class FileManager(QWidget):
     """文件管理控件 (File manager widget)"""
 
-    status_message = pyqtSignal(str)   # 状态栏消息信号
+    status_message = pyqtSignal(str)   # 状态栏消息信号 (Status bar message signal)
 
     def __init__(self, serial: str, adb_client: AdbClient, parent=None):
         super().__init__(parent)
@@ -55,40 +59,40 @@ class FileManager(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        self.back_btn = QAction("返回", self)
+        self.back_btn = QAction(self.tr("返回"), self)
         self.back_btn.triggered.connect(self.go_back)
         toolbar.addAction(self.back_btn)
 
-        self.forward_btn = QAction("前进", self)
+        self.forward_btn = QAction(self.tr("前进"), self)
         self.forward_btn.triggered.connect(self.go_forward)
         toolbar.addAction(self.forward_btn)
 
-        self.up_btn = QAction("上级目录", self)
+        self.up_btn = QAction(self.tr("上级目录"), self)
         self.up_btn.triggered.connect(self.go_up)
         toolbar.addAction(self.up_btn)
 
         toolbar.addSeparator()
 
-        self.refresh_btn = QAction("刷新", self)
+        self.refresh_btn = QAction(self.tr("刷新"), self)
         self.refresh_btn.triggered.connect(lambda: self.load_path(self.current_path))
         toolbar.addAction(self.refresh_btn)
 
-        self.home_btn = QAction("Home", self)
+        self.home_btn = QAction("Home", self)   # Home 不翻译，作为标识
         self.home_btn.triggered.connect(lambda: self.load_path("/sdcard"))
         toolbar.addAction(self.home_btn)
 
         toolbar.addSeparator()
 
-        self.show_hidden_btn = QAction("显示隐藏文件", self)
+        self.show_hidden_btn = QAction(self.tr("显示隐藏文件"), self)
         self.show_hidden_btn.setCheckable(True)
         self.show_hidden_btn.toggled.connect(self.toggle_hidden)
         toolbar.addAction(self.show_hidden_btn)
 
-        self.mkdir_btn = QAction("新建文件夹", self)
+        self.mkdir_btn = QAction(self.tr("新建文件夹"), self)
         self.mkdir_btn.triggered.connect(self.create_directory)
         toolbar.addAction(self.mkdir_btn)
 
-        self.upload_btn = QAction("上传文件", self)
+        self.upload_btn = QAction(self.tr("上传文件"), self)
         self.upload_btn.triggered.connect(self.upload_file)
         toolbar.addAction(self.upload_btn)
 
@@ -98,10 +102,10 @@ class FileManager(QWidget):
         address_layout = QHBoxLayout()
         self.address_bar = QLineEdit()
         self.address_bar.returnPressed.connect(self.go_to_address)
-        self.go_btn = QPushButton("前往")
+        self.go_btn = QPushButton(self.tr("前往"))
         self.go_btn.clicked.connect(self.go_to_address)
 
-        address_layout.addWidget(QLabel("路径:"))
+        address_layout.addWidget(QLabel(self.tr("路径:")))
         address_layout.addWidget(self.address_bar)
         address_layout.addWidget(self.go_btn)
         address_layout.addStretch()
@@ -117,14 +121,19 @@ class FileManager(QWidget):
         splitter = QSplitter(Qt.Horizontal)
 
         self.dir_tree = QTreeWidget()
-        self.dir_tree.setHeaderLabel("目录")
+        self.dir_tree.setHeaderLabel(self.tr("目录"))
         self.dir_tree.setIndentation(10)
         self.dir_tree.itemDoubleClicked.connect(self.on_tree_item_double_clicked)
         splitter.addWidget(self.dir_tree)
 
         self.file_table = QTableWidget()
         self.file_table.setColumnCount(4)
-        self.file_table.setHorizontalHeaderLabels(["名称", "大小", "修改时间", "类型"])
+        self.file_table.setHorizontalHeaderLabels([
+            self.tr("名称"),
+            self.tr("大小"),
+            self.tr("修改时间"),
+            self.tr("类型")
+        ])
         self.file_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.file_table.setColumnWidth(0, 200)   # 名称
         self.file_table.setColumnWidth(1, 100)   # 大小
@@ -176,17 +185,25 @@ class FileManager(QWidget):
         # 检查路径是否有效 (Check existence and permissions)
         test_out = self.adb_client.shell_sync(f"ls {path}", self.serial, timeout=5)
         if "No such file" in test_out or "cannot access" in test_out:
-            self.status_message.emit(f"路径不存在: {path}")
-            QMessageBox.warning(self, "路径不存在", f"目录不存在:\n{path}\n\n请检查路径是否正确。")
+            self.status_message.emit(self.tr("路径不存在: {path}").format(path=path))
+            QMessageBox.warning(
+                self,
+                self.tr("路径不存在"),
+                self.tr("目录不存在:\n{path}\n\n请检查路径是否正确。").format(path=path)
+            )
             return
         if "Permission denied" in test_out:
-            self.status_message.emit(f"权限不足，无法访问 {path}")
-            QMessageBox.warning(self, "权限不足", f"没有权限访问目录:\n{path}\n\n请检查目录权限或尝试以 root 权限运行。")
+            self.status_message.emit(self.tr("权限不足，无法访问 {path}").format(path=path))
+            QMessageBox.warning(
+                self,
+                self.tr("权限不足"),
+                self.tr("没有权限访问目录:\n{path}\n\n请检查目录权限或尝试以 root 权限运行。").format(path=path)
+            )
             return
 
         self.current_path = path
         self.address_bar.setText(path)
-        self.status_message.emit(f"正在加载 {path} ...")
+        self.status_message.emit(self.tr("正在加载 {path} ...").format(path=path))
 
         out = self.adb_client.shell_sync(f"ls -la {path}", self.serial, timeout=10)
         self.file_list = self._parse_ls_output(out)
@@ -197,8 +214,14 @@ class FileManager(QWidget):
 
         dir_count = sum(1 for item in self.file_list if item["is_dir"])
         file_count = len(self.file_list) - dir_count
-        self.status_message.emit(f"已加载 {len(self.file_list)} 个项目")
-        self.stats_label.setText(f"{dir_count} 个文件夹, {file_count} 个文件")
+        self.status_message.emit(
+            self.tr("已加载 {count} 个项目").format(count=len(self.file_list))
+        )
+        self.stats_label.setText(
+            self.tr("{dir_count} 个文件夹, {file_count} 个文件").format(
+                dir_count=dir_count, file_count=file_count
+            )
+        )
 
     def _parse_ls_output(self, output: str) -> List[Dict]:
         """
@@ -285,7 +308,8 @@ class FileManager(QWidget):
             self.file_table.setItem(row, 0, name_item)
             self.file_table.setItem(row, 1, QTableWidgetItem(item["size"]))
             self.file_table.setItem(row, 2, QTableWidgetItem(item["modified"]))
-            file_type = "文件夹" if item["is_dir"] else "文件"
+            # 文件类型翻译 (Translate file type)
+            file_type = self.tr("文件夹") if item["is_dir"] else self.tr("文件")
             self.file_table.setItem(row, 3, QTableWidgetItem(file_type))
 
     def update_dir_tree(self):
@@ -316,8 +340,12 @@ class FileManager(QWidget):
         if file_info["is_dir"]:
             self.load_path(file_info["full_path"])
         else:
-            reply = QMessageBox.question(self, "下载文件", f"是否下载文件 {file_info['name']} 到本地？",
-                                         QMessageBox.Yes | QMessageBox.No)
+            reply = QMessageBox.question(
+                self,
+                self.tr("下载文件"),
+                self.tr("是否下载文件 {name} 到本地？").format(name=file_info['name']),
+                QMessageBox.Yes | QMessageBox.No
+            )
             if reply == QMessageBox.Yes:
                 self.download_file(file_info["full_path"], file_info["name"])
 
@@ -361,16 +389,16 @@ class FileManager(QWidget):
         file_info = self.file_list[row]
         menu = QMenu()
 
-        download_action = QAction("下载", self)
+        download_action = QAction(self.tr("下载"), self)
         download_action.triggered.connect(lambda: self.download_file(file_info["full_path"], file_info["name"]))
         menu.addAction(download_action)
 
         if not file_info["is_dir"]:
-            rename_action = QAction("重命名", self)
+            rename_action = QAction(self.tr("重命名"), self)
             rename_action.triggered.connect(lambda: self.rename_file(file_info["full_path"]))
             menu.addAction(rename_action)
 
-        delete_action = QAction("删除", self)
+        delete_action = QAction(self.tr("删除"), self)
         delete_action.triggered.connect(lambda: self.delete_file(file_info["full_path"], file_info["name"]))
         menu.addAction(delete_action)
 
@@ -378,11 +406,17 @@ class FileManager(QWidget):
 
     def download_file(self, remote_path: str, filename: str):
         """下载文件到本地 (Download file with progress)"""
-        local_path, _ = QFileDialog.getSaveFileName(self, "保存文件", filename)
+        local_path, _ = QFileDialog.getSaveFileName(
+            self, self.tr("保存文件"), filename
+        )
         if not local_path:
             return
 
-        progress = QProgressDialog(f"正在下载 {filename}...", "取消", 0, 100, self)
+        progress = QProgressDialog(
+            self.tr("正在下载 {filename}...").format(filename=filename),
+            self.tr("取消"),
+            0, 100, self
+        )
         progress.setWindowModality(Qt.WindowModal)
         progress.setAutoClose(True)
         progress.setAutoReset(True)
@@ -393,24 +427,37 @@ class FileManager(QWidget):
                 return
             progress.setValue(percent)
             if percent >= 100:
-                progress.setLabelText("下载完成，正在完成...")
+                progress.setLabelText(self.tr("下载完成，正在完成..."))
 
         try:
             success = self.adb_client.pull_with_progress(remote_path, local_path, self.serial, update_progress)
             if success:
                 progress.setValue(100)
-                self.status_message.emit(f"下载完成: {filename}")
-                QMessageBox.information(self, "下载成功", f"文件已保存到 {local_path}")
+                self.status_message.emit(self.tr("下载完成: {filename}").format(filename=filename))
+                QMessageBox.information(
+                    self,
+                    self.tr("下载成功"),
+                    self.tr("文件已保存到 {path}").format(path=local_path)
+                )
             else:
                 raise Exception("拉取失败")
         except Exception as e:
             progress.close()
-            self.status_message.emit(f"下载失败: {filename}")
-            QMessageBox.warning(self, "下载失败", f"下载 {filename} 失败\n{str(e)}")
+            self.status_message.emit(self.tr("下载失败: {filename}").format(filename=filename))
+            QMessageBox.warning(
+                self,
+                self.tr("下载失败"),
+                self.tr("下载 {filename} 失败\n{error}").format(filename=filename, error=str(e))
+            )
 
     def upload_file(self):
         """上传本地文件 (Upload files)"""
-        local_paths, _ = QFileDialog.getOpenFileNames(self, "选择文件", "", "所有文件 (*.*)")
+        local_paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            self.tr("选择文件"),
+            "",
+            self.tr("所有文件 (*.*)")
+        )
         if not local_paths:
             return
 
@@ -418,7 +465,11 @@ class FileManager(QWidget):
             filename = os.path.basename(local_path)
             remote_path = self.current_path.rstrip('/') + '/' + filename
 
-            progress = QProgressDialog(f"正在上传 {filename}...", "取消", 0, 100, self)
+            progress = QProgressDialog(
+                self.tr("正在上传 {filename}...").format(filename=filename),
+                self.tr("取消"),
+                0, 100, self
+            )
             progress.setWindowModality(Qt.WindowModal)
             progress.setAutoClose(True)
             progress.setAutoReset(True)
@@ -429,20 +480,24 @@ class FileManager(QWidget):
                     return
                 progress.setValue(percent)
                 if percent >= 100:
-                    progress.setLabelText("上传完成，正在完成...")
+                    progress.setLabelText(self.tr("上传完成，正在完成..."))
 
             try:
                 success = self.adb_client.push_with_progress(local_path, remote_path, self.serial, update_progress)
                 if success:
                     progress.setValue(100)
-                    self.status_message.emit(f"上传完成: {filename}")
+                    self.status_message.emit(self.tr("上传完成: {filename}").format(filename=filename))
                     self.load_path(self.current_path)   # 刷新文件列表
                 else:
                     raise Exception("推送失败")
             except Exception as e:
                 progress.close()
-                self.status_message.emit(f"上传失败: {filename}")
-                QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
+                self.status_message.emit(self.tr("上传失败: {filename}").format(filename=filename))
+                QMessageBox.warning(
+                    self,
+                    self.tr("上传失败"),
+                    self.tr("上传 {filename} 失败\n{error}").format(filename=filename, error=str(e))
+                )
 
     def upload_files(self, local_paths: List[str]):
         """
@@ -450,70 +505,103 @@ class FileManager(QWidget):
         """
         if not local_paths:
             return
-        reply = QMessageBox.question(self, "确认上传", f"确定要上传 {len(local_paths)} 个文件到当前目录吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self,
+            self.tr("确认上传"),
+            self.tr("确定要上传 {count} 个文件到当前目录吗？").format(count=len(local_paths)),
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply != QMessageBox.Yes:
             return
         for local_path in local_paths:
             filename = os.path.basename(local_path)
             remote_path = self.current_path.rstrip('/') + '/' + filename
-            self.status_message.emit(f"正在上传 {filename} ...")
+            self.status_message.emit(self.tr("正在上传 {filename} ...").format(filename=filename))
             try:
                 self.adb_client.push_sync(local_path, remote_path, self.serial)
-                self.status_message.emit(f"上传完成: {filename}")
+                self.status_message.emit(self.tr("上传完成: {filename}").format(filename=filename))
             except Exception as e:
-                self.status_message.emit(f"上传失败: {filename}")
-                QMessageBox.warning(self, "上传失败", f"上传 {filename} 失败\n{str(e)}")
+                self.status_message.emit(self.tr("上传失败: {filename}").format(filename=filename))
+                QMessageBox.warning(
+                    self,
+                    self.tr("上传失败"),
+                    self.tr("上传 {filename} 失败\n{error}").format(filename=filename, error=str(e))
+                )
         self.load_path(self.current_path)
 
     def delete_file(self, remote_path: str, name: str):
         """删除文件或文件夹 (Delete file or folder)"""
-        reply = QMessageBox.question(self, "确认删除", f"确定要删除 {name} 吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self,
+            self.tr("确认删除"),
+            self.tr("确定要删除 {name} 吗？").format(name=name),
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply != QMessageBox.Yes:
             return
         out = self.adb_client.shell_sync(f"rm -rf {remote_path}", self.serial, timeout=5)
         if "Permission denied" in out:
-            self.status_message.emit("删除失败: 权限不足")
-            QMessageBox.warning(self, "删除失败", f"无法删除 {name}\n权限不足，请检查文件权限。")
+            self.status_message.emit(self.tr("删除失败: 权限不足"))
+            QMessageBox.warning(
+                self,
+                self.tr("删除失败"),
+                self.tr("无法删除 {name}\n权限不足，请检查文件权限。").format(name=name)
+            )
         elif "No such file" in out or "cannot remove" in out:
-            self.status_message.emit(f"删除失败: {name}")
-            QMessageBox.warning(self, "删除失败", f"删除 {name} 失败\n{out}")
+            self.status_message.emit(self.tr("删除失败: {name}").format(name=name))
+            QMessageBox.warning(
+                self,
+                self.tr("删除失败"),
+                self.tr("删除 {name} 失败\n{output}").format(name=name, output=out)
+            )
         else:
-            self.status_message.emit(f"已删除: {name}")
+            self.status_message.emit(self.tr("已删除: {name}").format(name=name))
             self.load_path(self.current_path)
 
     def rename_file(self, remote_path: str):
         """重命名文件或文件夹 (Rename file or folder)"""
         old_name = remote_path.split('/')[-1]
-        new_name, ok = QInputDialog.getText(self, "重命名", "新名称:", text=old_name)
+        new_name, ok = QInputDialog.getText(
+            self,
+            self.tr("重命名"),
+            self.tr("新名称:"),
+            text=old_name
+        )
         if not ok or not new_name or new_name == old_name:
             return
         dir_path = remote_path[:remote_path.rfind('/')]
         new_remote_path = dir_path + '/' + new_name
         out = self.adb_client.shell_sync(f"mv {remote_path} {new_remote_path}", self.serial, timeout=5)
         if "No such file" not in out and "cannot rename" not in out:
-            self.status_message.emit(f"重命名成功: {new_name}")
+            self.status_message.emit(self.tr("重命名成功: {name}").format(name=new_name))
             self.load_path(self.current_path)
         else:
-            self.status_message.emit(f"重命名失败: {new_name}")
-            QMessageBox.warning(self, "重命名失败", f"重命名失败\n{out}")
+            self.status_message.emit(self.tr("重命名失败: {name}").format(name=new_name))
+            QMessageBox.warning(
+                self,
+                self.tr("重命名失败"),
+                self.tr("重命名失败\n{output}").format(output=out)
+            )
 
     def create_directory(self):
         """新建文件夹 (Create new directory)"""
-        name, ok = QInputDialog.getText(self, "新建文件夹", "文件夹名称:")
+        name, ok = QInputDialog.getText(
+            self,
+            self.tr("新建文件夹"),
+            self.tr("文件夹名称:")
+        )
         if not ok or not name:
             return
         new_path = self.current_path.rstrip('/') + '/' + name
         out = self.adb_client.shell_sync(f"mkdir {new_path}", self.serial, timeout=5)
         if "read-only" in out or "Permission denied" in out:
-            self.status_message.emit("创建失败: 权限不足")
-            QMessageBox.warning(self, "错误", "创建文件夹失败: 权限不足")
+            self.status_message.emit(self.tr("创建失败: 权限不足"))
+            QMessageBox.warning(self, self.tr("错误"), self.tr("创建文件夹失败: 权限不足"))
         elif "File exists" in out:
-            self.status_message.emit("创建失败: 文件已存在")
-            QMessageBox.warning(self, "错误", "创建文件夹失败: 同名文件已存在")
+            self.status_message.emit(self.tr("创建失败: 文件已存在"))
+            QMessageBox.warning(self, self.tr("错误"), self.tr("创建文件夹失败: 同名文件已存在"))
         else:
-            self.status_message.emit(f"已创建文件夹: {name}")
+            self.status_message.emit(self.tr("已创建文件夹: {name}").format(name=name))
             self.load_path(self.current_path)
 
     # ========== 拖拽上传 (Drag & Drop Upload) ==========

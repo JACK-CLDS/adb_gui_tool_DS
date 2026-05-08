@@ -1,8 +1,15 @@
 """
 ui/main_window.py - 主窗口 (Main Window)
 
-ADB GUI Tool 的主界面，包含设备列表、侧边栏（历史/收藏）、工具栏、
-日志坞、菜单栏，以及设备连接、断开、打开设备窗口等核心交互。
+功能 (Function):
+    ADB GUI Tool 的主界面，包含设备列表、侧边栏（历史/收藏）、工具栏、
+    日志坞、菜单栏，以及设备连接、断开、打开设备窗口等核心交互。
+    The main window of ADB GUI Tool, containing device list, sidebar (history/favorites),
+    toolbar, log dock, menu bar, and core interactions like device connect/disconnect.
+
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
 """
 
 import sys
@@ -52,15 +59,15 @@ class MainWindow(QMainWindow):
         self.update_adb_buttons_state()
         self.create_menu_bar()
 
-        # 回车键打开选中设备 (Enter key to open selected device)
+        # 回车键打开选中设备 (Enter key opens selected device)
         QShortcut(QKeySequence(Qt.Key_Return), self, self._on_return_pressed)
-        QShortcut(QKeySequence(Qt.Key_Enter), self, self._on_return_pressed)   # 小键盘回车
+        QShortcut(QKeySequence(Qt.Key_Enter), self, self._on_return_pressed)
 
     # ---------- UI 初始化 (UI Initialization) ----------
 
     def init_ui(self):
         """创建主界面布局 (Create main UI layout)"""
-        self.setWindowTitle("ADB GUI Tool - 设备管理")
+        self.setWindowTitle(self.tr("ADB GUI Tool - 设备管理"))
         self.setMinimumSize(800, 600)
 
         central_widget = QWidget()
@@ -83,11 +90,15 @@ class MainWindow(QMainWindow):
         # 设备表格 (Device table)
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(3)
-        self.device_table.setHorizontalHeaderLabels(["设备名称", "序列号/地址", "状态"])
+        self.device_table.setHorizontalHeaderLabels([
+            self.tr("设备名称"),
+            self.tr("序列号/地址"),
+            self.tr("状态")
+        ])
         self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.device_table.setColumnWidth(0, 200)   # 设备名称
-        self.device_table.setColumnWidth(1, 250)   # 序列号/地址
-        self.device_table.setColumnWidth(2, 100)   # 状态
+        self.device_table.setColumnWidth(0, 200)
+        self.device_table.setColumnWidth(1, 250)
+        self.device_table.setColumnWidth(2, 100)
         self.device_table.setSortingEnabled(True)
         self.device_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.device_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -106,9 +117,9 @@ class MainWindow(QMainWindow):
 
         # 上下移动按钮 (Move up/down buttons)
         move_layout = QHBoxLayout()
-        self.move_up_btn = QPushButton("上移")
+        self.move_up_btn = QPushButton(self.tr("上移"))
         self.move_up_btn.clicked.connect(self.move_device_up)
-        self.move_down_btn = QPushButton("下移")
+        self.move_down_btn = QPushButton(self.tr("下移"))
         self.move_down_btn.clicked.connect(self.move_device_down)
         move_layout.addWidget(self.move_up_btn)
         move_layout.addWidget(self.move_down_btn)
@@ -119,9 +130,11 @@ class MainWindow(QMainWindow):
         bottom_widget = QWidget()
         bottom_layout = QHBoxLayout(bottom_widget)
         self.address_input = QLineEdit()
-        self.address_input.setPlaceholderText("输入 IP:端口 或 设备序列号，然后按回车连接")
+        self.address_input.setPlaceholderText(
+            self.tr("输入 IP:端口 或 设备序列号，然后按回车连接")
+        )
         self.address_input.returnPressed.connect(self.connect_to_address)
-        self.connect_btn = QPushButton("连接")
+        self.connect_btn = QPushButton(self.tr("连接"))
         self.connect_btn.clicked.connect(self.connect_to_address)
         bottom_layout.addWidget(self.address_input)
         bottom_layout.addWidget(self.connect_btn)
@@ -135,7 +148,9 @@ class MainWindow(QMainWindow):
         self.create_log_dock()
 
         # ADB 未配置时的警告标签 (Warning label when ADB is missing)
-        self.adb_warning_label = QLabel("⚠️ 未找到有效的 ADB，请在「全局设置」中配置 ADB 路径")
+        self.adb_warning_label = QLabel(
+            self.tr("⚠️ 未找到有效的 ADB，请在「全局设置」中配置 ADB 路径")
+        )
         self.adb_warning_label.setStyleSheet("color: red; background-color: #ffeeee; padding: 5px;")
         self.adb_warning_label.setAlignment(Qt.AlignCenter)
         self.adb_warning_label.hide()
@@ -153,7 +168,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(10)
 
         self.history_tree = QTreeWidget()
-        self.history_tree.setHeaderLabel("历史连接")
+        self.history_tree.setHeaderLabel(self.tr("历史连接"))
         self.history_tree.setIndentation(10)
         self.history_tree.setMaximumHeight(200)
         self.history_tree.itemDoubleClicked.connect(self.on_history_item_clicked)
@@ -162,7 +177,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.history_tree)
 
         self.favorites_tree = QTreeWidget()
-        self.favorites_tree.setHeaderLabel("收藏设备")
+        self.favorites_tree.setHeaderLabel(self.tr("收藏设备"))
         self.favorites_tree.setIndentation(10)
         self.favorites_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.favorites_tree.customContextMenuRequested.connect(self.show_favorites_menu)
@@ -175,62 +190,61 @@ class MainWindow(QMainWindow):
 
     def create_toolbar(self):
         """创建主工具栏 (Create main toolbar)"""
-        toolbar = self.addToolBar("主要工具")
+        toolbar = self.addToolBar(self.tr("主要工具"))
         toolbar.setMovable(False)
 
-        refresh_action = QAction("刷新设备", self)
+        refresh_action = QAction(self.tr("刷新设备"), self)
         refresh_action.triggered.connect(self.on_refresh_clicked)
         toolbar.addAction(refresh_action)
 
-        restart_adb_action = QAction("重启 ADB", self)
+        restart_adb_action = QAction(self.tr("重启 ADB"), self)
         restart_adb_action.triggered.connect(self.restart_adb_server)
         toolbar.addAction(restart_adb_action)
 
-        kill_adb_action = QAction("Kill ADB", self)
+        kill_adb_action = QAction(self.tr("Kill ADB"), self)
         kill_adb_action.triggered.connect(self.kill_adb_server)
         toolbar.addAction(kill_adb_action)
 
         toolbar.addSeparator()
 
-        settings_action = QAction("全局设置", self)
+        settings_action = QAction(self.tr("全局设置"), self)
         settings_action.triggered.connect(self.open_settings_dialog)
         toolbar.addAction(settings_action)
 
-        about_action = QAction("关于", self)
+        about_action = QAction(self.tr("关于"), self)
         about_action.triggered.connect(self.open_about_dialog)
         toolbar.addAction(about_action)
 
-        # 需要根据 ADB 状态禁用的按钮列表
         self.adb_dependent_actions = [refresh_action, restart_adb_action, kill_adb_action]
         self.toolbar = toolbar
 
     def create_log_dock(self):
         """创建程序日志窗口 (Create log dock widget)"""
-        self.log_dock = QDockWidget("程序日志", self)
+        self.log_dock = QDockWidget(self.tr("程序日志"), self)
         self.log_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_dock.setWidget(self.log_text)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
         self.log_dock.show()
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(self.tr("就绪"))
 
     def create_menu_bar(self):
         """创建菜单栏 (Create menu bar)"""
         menubar = self.menuBar()
-        view_menu = menubar.addMenu("视图")
+        view_menu = menubar.addMenu(self.tr("视图"))
 
-        settings_action = QAction("全局设置", self)
+        settings_action = QAction(self.tr("全局设置"), self)
         settings_action.triggered.connect(self.open_settings_dialog)
         view_menu.addAction(settings_action)
 
-        self.toggle_toolbar_action = QAction("设备操作工具栏", self, checkable=True)
+        self.toggle_toolbar_action = QAction(self.tr("设备操作工具栏"), self, checkable=True)
         self.toggle_toolbar_action.setChecked(True)
         self.toggle_toolbar_action.toggled.connect(self.toolbar.setVisible)
         self.toolbar.visibilityChanged.connect(self.toggle_toolbar_action.setChecked)
         view_menu.addAction(self.toggle_toolbar_action)
 
-        self.toggle_log_action = QAction("程序日志", self, checkable=True)
+        self.toggle_log_action = QAction(self.tr("程序日志"), self, checkable=True)
         self.toggle_log_action.setChecked(True)
         self.toggle_log_action.toggled.connect(self.log_dock.setVisible)
         self.log_dock.visibilityChanged.connect(self.toggle_log_action.setChecked)
@@ -265,7 +279,7 @@ class MainWindow(QMainWindow):
         if self.device_manager:
             self.device_manager.manual_refresh()
         else:
-            self.log_message("ADB 未配置，无法刷新设备列表")
+            self.log_message(self.tr("ADB 未配置，无法刷新设备列表"))
 
     def update_device_table(self, devices: List[tuple]):
         """用最新设备列表更新表格 (Update table with devices)"""
@@ -296,12 +310,12 @@ class MainWindow(QMainWindow):
             elif state == "unauthorized":
                 state_item.setForeground(Qt.red)
             self.device_table.setItem(row, 2, state_item)
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(self.tr("就绪"))
 
     def on_device_double_clicked(self, index):
         """双击设备行打开设备窗口"""
         if not self.device_manager:
-            self.log_message("ADB 未配置，无法打开设备窗口")
+            self.log_message(self.tr("ADB 未配置，无法打开设备窗口"))
             return
         serial = self.device_table.item(index.row(), 1).text()
         self.open_device_window(serial)
@@ -345,9 +359,9 @@ class MainWindow(QMainWindow):
             return
         serial = serial_item.text()
         menu = QMenu()
-        alias_action = QAction("设置别名", self)
+        alias_action = QAction(self.tr("设置别名"), self)
         alias_action.triggered.connect(lambda: self.set_device_alias(serial))
-        disconnect_action = QAction("断开连接", self)
+        disconnect_action = QAction(self.tr("断开连接"), self)
         disconnect_action.triggered.connect(lambda: self.disconnect_device(serial))
         menu.addAction(alias_action)
         menu.addAction(disconnect_action)
@@ -357,18 +371,32 @@ class MainWindow(QMainWindow):
         """设置或清除设备别名"""
         current_aliases = ConfigManager.get_device_aliases()
         current_alias = current_aliases.get(serial, "")
-        alias, ok = QInputDialog.getText(self, "设置设备别名", "请输入别名（留空则清除）:", text=current_alias)
+        alias, ok = QInputDialog.getText(
+            self,
+            self.tr("设置设备别名"),
+            self.tr("请输入别名（留空则清除）:"),
+            text=current_alias
+        )
         if ok:
             ConfigManager.set_device_alias(serial, alias.strip())
             self.device_manager.manual_refresh()
             self.refresh_history_tree()
             self.refresh_favorites_tree()
-            self.log_message(f"设备 {serial} 别名已更新为: {alias or '无'}")
+            # 日志消息：组合翻译
+            self.log_message(
+                self.tr("设备 {serial} 别名已更新为: {alias}").format(
+                    serial=serial, alias=alias or self.tr("无")
+                )
+            )
 
     def disconnect_device(self, serial: str):
         """断开指定设备"""
         self.adb_client.disconnect_device(
-            serial, callback=lambda success, msg: self.log_message(f"断开: {msg}"))
+            serial,
+            callback=lambda success, msg: self.log_message(
+                self.tr("断开: {message}").format(message=msg)
+            )
+        )
         self.device_manager.manual_refresh()
 
     # ---------- 设备排序 (Device reordering) ----------
@@ -415,82 +443,89 @@ class MainWindow(QMainWindow):
     def connect_to_address(self):
         """连接到输入框中的网络地址"""
         if not self.adb_client:
-            self.log_message("ADB 未配置，请先在全局设置中配置")
-            QMessageBox.warning(self, "提示", "请先在全局设置中配置 ADB")
+            self.log_message(self.tr("ADB 未配置，请先在全局设置中配置"))
+            QMessageBox.warning(self, self.tr("提示"), self.tr("请先在全局设置中配置 ADB"))
             return
         addr = self.address_input.text().strip()
         if not addr:
             return
         if ":" not in addr and not addr.startswith("emulator-"):
-            addr = f"{addr}:5555"   # 自动补全默认端口
-        self.log_message(f"连接 {addr} ...")
+            addr = f"{addr}:5555"
+        self.log_message(self.tr("连接 {addr} ...").format(addr=addr))
         self.adb_client.connect_device(addr, callback=self.on_connect_result)
 
     def on_connect_result(self, success: bool, message: str):
         """连接结果回调"""
         if success:
-            self.log_message(f"连接成功: {message}")
+            self.log_message(self.tr("连接成功: {message}").format(message=message))
             if self.device_manager:
                 self.device_manager.manual_refresh()
             ConfigManager.add_history(self.address_input.text().strip())
             self.refresh_history_tree()
             self.address_input.clear()
         else:
-            self.log_message(f"连接失败: {message}")
-            QMessageBox.critical(self, "连接失败",
-                                 f"错误详情:\n{message}\n\n请检查设备是否开启网络调试，或尝试在命令行中手动连接。")
-        self.statusBar().showMessage("就绪")
+            self.log_message(self.tr("连接失败: {message}").format(message=message))
+            QMessageBox.critical(
+                self, self.tr("连接失败"),
+                self.tr("错误详情:\n{message}\n\n请检查设备是否开启网络调试，或尝试在命令行中手动连接。").format(
+                    message=message
+                )
+            )
+        self.statusBar().showMessage(self.tr("就绪"))
 
     # ---------- ADB 服务控制 (ADB server control) ----------
 
     def restart_adb_server(self):
         """重启 ADB 服务"""
         if not self.adb_client:
-            self.log_message("ADB 未配置，无法重启")
+            self.log_message(self.tr("ADB 未配置，无法重启"))
             return
         if self.device_windows and QMessageBox.question(
-                self, "确认", "重启 ADB 会关闭所有设备窗口，继续？") != QMessageBox.Yes:
+                self, self.tr("确认"), self.tr("重启 ADB 会关闭所有设备窗口，继续？")
+            ) != QMessageBox.Yes:
             return
         for _, win in self.device_windows:
             win.close()
         self.device_windows.clear()
-        self.log_message("正在重启 ADB...")
+        self.log_message(self.tr("正在重启 ADB..."))
         proc = QProcess(self)
         proc.finished.connect(lambda code, p=proc: self._after_adb_kill(code))
         proc.start(self.adb_client.adb_path, ["kill-server"])
 
     def _after_adb_kill(self, exit_code):
-        self.log_message("ADB 已停止，正在启动...")
+        self.log_message(self.tr("ADB 已停止，正在启动..."))
         proc = QProcess(self)
         proc.finished.connect(self._after_adb_start)
         proc.start(self.adb_client.adb_path, ["start-server"])
 
     def _after_adb_start(self, exit_code):
         if exit_code == 0:
-            self.log_message("ADB 已启动")
+            self.log_message(self.tr("ADB 已启动"))
             if self.device_manager:
                 self.device_manager.manual_refresh()
         else:
-            self.log_message("ADB 启动失败")
-        self.statusBar().showMessage("就绪")
+            self.log_message(self.tr("ADB 启动失败"))
+        self.statusBar().showMessage(self.tr("就绪"))
 
     def kill_adb_server(self):
         """停止 ADB 服务"""
         if not self.adb_client:
-            self.log_message("ADB 未配置，无法停止")
+            self.log_message(self.tr("ADB 未配置，无法停止"))
             return
-        if QMessageBox.question(self, "确认",
-                               "停止 ADB 服务，所有设备将断开。继续？") != QMessageBox.Yes:
+        if QMessageBox.question(
+                self, self.tr("确认"),
+                self.tr("停止 ADB 服务，所有设备将断开。继续？")
+            ) != QMessageBox.Yes:
             return
-        self.log_message("正在停止 ADB...")
+        self.log_message(self.tr("正在停止 ADB..."))
         proc = QProcess(self)
-        proc.finished.connect(lambda: self.log_message("ADB 已停止"))
+        proc.finished.connect(lambda: self.log_message(self.tr("ADB 已停止")))
         proc.start(self.adb_client.adb_path, ["kill-server"])
         self.device_table.setRowCount(0)
         for _, win in self.device_windows:
             win.close()
         self.device_windows.clear()
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(self.tr("就绪"))
 
     # ---------- 侧边栏：历史记录 & 收藏 (Sidebar: history & favorites) ----------
 
@@ -520,7 +555,7 @@ class MainWindow(QMainWindow):
         if not item:
             return
         menu = QMenu()
-        delete_action = QAction("删除此记录", self)
+        delete_action = QAction(self.tr("删除此记录"), self)
         delete_action.triggered.connect(lambda: self.delete_history_item(item))
         menu.addAction(delete_action)
         menu.exec_(self.history_tree.viewport().mapToGlobal(position))
@@ -530,9 +565,9 @@ class MainWindow(QMainWindow):
         addr = item.text(0)
         if ConfigManager.remove_history(addr):
             self.refresh_history_tree()
-            self.log_message(f"已从历史记录中删除: {addr}")
+            self.log_message(self.tr("已从历史记录中删除: {addr}").format(addr=addr))
         else:
-            self.log_message(f"删除失败: {addr}")
+            self.log_message(self.tr("删除失败: {addr}").format(addr=addr))
 
     def refresh_favorites_tree(self):
         """刷新收藏设备列表"""
@@ -546,7 +581,7 @@ class MainWindow(QMainWindow):
 
     def on_favorite_item_clicked(self, item, col):
         """点击收藏设备填充地址并连接"""
-        if item.parent() is not None:   # 子项（设备）
+        if item.parent() is not None:
             self.address_input.setText(item.text(0))
             self.connect_to_address()
 
@@ -555,23 +590,25 @@ class MainWindow(QMainWindow):
         item = self.favorites_tree.itemAt(pos)
         menu = QMenu()
         if item is None:
-            menu.addAction("新建分组", self).triggered.connect(self.add_favorite_group)
-        elif item.parent() is None:   # 分组
-            menu.addAction("添加设备到此分组", self).triggered.connect(
+            menu.addAction(self.tr("新建分组"), self).triggered.connect(self.add_favorite_group)
+        elif item.parent() is None:
+            menu.addAction(self.tr("添加设备到此分组"), self).triggered.connect(
                 lambda: self.add_device_to_group(item.text(0)))
-            menu.addAction("重命名分组", self).triggered.connect(
+            menu.addAction(self.tr("重命名分组"), self).triggered.connect(
                 lambda: self.rename_favorite_group(item.text(0)))
-            menu.addAction("删除分组", self).triggered.connect(
+            menu.addAction(self.tr("删除分组"), self).triggered.connect(
                 lambda: self.delete_favorite_group(item.text(0)))
-        else:   # 子项（设备）
+        else:
             group = item.parent().text(0)
-            menu.addAction("从收藏中移除", self).triggered.connect(
+            menu.addAction(self.tr("从收藏中移除"), self).triggered.connect(
                 lambda: self.remove_favorite_device(group, item.text(0)))
         menu.exec_(self.favorites_tree.viewport().mapToGlobal(pos))
 
     def add_favorite_group(self):
         """新建收藏分组"""
-        name, ok = QInputDialog.getText(self, "新建分组", "分组名称:")
+        name, ok = QInputDialog.getText(
+            self, self.tr("新建分组"), self.tr("分组名称:")
+        )
         if ok and name and name not in ConfigManager.get_favorites():
             fav = ConfigManager.get_favorites()
             fav[name] = []
@@ -585,15 +622,20 @@ class MainWindow(QMainWindow):
             ConfigManager.add_favorite(group, addr)
             self.refresh_favorites_tree()
         else:
-            QMessageBox.warning(self, "提示", "请先在输入框中填写设备地址")
+            QMessageBox.warning(
+                self, self.tr("提示"),
+                self.tr("请先在输入框中填写设备地址")
+            )
 
     def rename_favorite_group(self, old: str):
         """重命名收藏分组"""
-        new, ok = QInputDialog.getText(self, "重命名分组", "新名称:", text=old)
+        new, ok = QInputDialog.getText(
+            self, self.tr("重命名分组"), self.tr("新名称:"), text=old
+        )
         if ok and new and new != old:
             fav = ConfigManager.get_favorites()
             if new in fav:
-                QMessageBox.warning(self, "错误", "分组名已存在")
+                QMessageBox.warning(self, self.tr("错误"), self.tr("分组名已存在"))
                 return
             fav[new] = fav.pop(old)
             ConfigManager.save_favorites(fav)
@@ -601,8 +643,10 @@ class MainWindow(QMainWindow):
 
     def delete_favorite_group(self, group: str):
         """删除收藏分组"""
-        if QMessageBox.question(self, "确认删除",
-                               f"删除分组「{group}」及其所有设备？") == QMessageBox.Yes:
+        if QMessageBox.question(
+                self, self.tr("确认删除"),
+                self.tr("删除分组「{group}」及其所有设备？").format(group=group)
+            ) == QMessageBox.Yes:
             fav = ConfigManager.get_favorites()
             fav.pop(group, None)
             ConfigManager.save_favorites(fav)
@@ -624,25 +668,31 @@ class MainWindow(QMainWindow):
     def open_about_dialog(self):
         """打开关于对话框"""
         dialog = QDialog(self)
-        dialog.setWindowTitle("关于")
+        dialog.setWindowTitle(self.tr("关于"))
         dialog.resize(600, 400)
         layout = QVBoxLayout(dialog)
 
-        sys_info = f"操作系统: {platform.system()} {platform.release()}\nPython版本: {sys.version.split()[0]}"
+        sys_info = self.tr("操作系统: {system} {release}").format(
+            system=platform.system(), release=platform.release()
+        )
+        python_ver = sys.version.split()[0]
+        sys_info += self.tr("\nPython版本: {version}").format(version=python_ver)
+
         if self.adb_client and self.adb_client.adb_path:
             ok, ver = SystemUtils.check_adb_version(self.adb_client.adb_path)
-            adb_info = f"ADB路径: {self.adb_client.adb_path}\nADB版本: {ver if ok else '获取失败'}"
+            adb_info = self.tr("ADB路径: {path}").format(path=self.adb_client.adb_path)
+            adb_info += self.tr("\nADB版本: {version}").format(version=ver if ok else self.tr("获取失败"))
         else:
-            adb_info = "ADB路径: 未配置或无效\n请在全局设置中配置正确的 ADB 路径"
+            adb_info = self.tr("ADB路径: 未配置或无效\n请在全局设置中配置正确的 ADB 路径")
 
         text_browser = QTextBrowser()
         text_browser.setText(f"{sys_info}\n\n{adb_info}")
         layout.addWidget(text_browser)
-        btn = QPushButton("确定")
+        btn = QPushButton(self.tr("确定"))
         btn.clicked.connect(dialog.accept)
         layout.addWidget(btn)
         dialog.exec_()
-        self.statusBar().showMessage("就绪")
+        self.statusBar().showMessage(self.tr("就绪"))
 
     def log_message(self, msg: str):
         """向日志窗口追加消息"""

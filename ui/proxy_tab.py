@@ -7,6 +7,10 @@ ui/proxy_tab.py - 设备代理设置控件 (Device Proxy Settings)
     - 清除代理 (Clear proxy)
     - 操作状态反馈 (Operation status feedback)
 
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
+
 依赖 (Dependencies): PyQt5, core.adb_client
 """
 
@@ -37,30 +41,32 @@ class ProxyTab(QWidget):
         layout = QVBoxLayout(self)
 
         # ---- 当前代理状态 (Current proxy status) ----
-        status_group = QGroupBox("当前代理")
+        status_group = QGroupBox(self.tr("当前代理"))
         status_layout = QFormLayout()
-        self.current_proxy_label = QLabel("未设置")
+        self.current_proxy_label = QLabel(self.tr("未设置"))
         self.current_proxy_label.setStyleSheet("font-weight: bold;")
-        status_layout.addRow("HTTP 代理:", self.current_proxy_label)
+        status_layout.addRow(self.tr("HTTP 代理:"), self.current_proxy_label)
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)
 
         # ---- 设置代理 (Set proxy) ----
-        set_group = QGroupBox("设置代理")
+        set_group = QGroupBox(self.tr("设置代理"))
         set_layout = QFormLayout()
 
         self.host_edit = QLineEdit()
-        self.host_edit.setPlaceholderText("例如 192.168.1.100 或 proxy.example.com")
+        self.host_edit.setPlaceholderText(
+            self.tr("例如 192.168.1.100 或 proxy.example.com")
+        )
         self.port_edit = QLineEdit()
-        self.port_edit.setPlaceholderText("例如 8080")
+        self.port_edit.setPlaceholderText(self.tr("例如 8080"))
         self.port_edit.setMaximumWidth(100)
-        set_layout.addRow("主机:", self.host_edit)
-        set_layout.addRow("端口:", self.port_edit)
+        set_layout.addRow(self.tr("主机:"), self.host_edit)
+        set_layout.addRow(self.tr("端口:"), self.port_edit)
 
         btn_layout = QHBoxLayout()
-        self.set_btn = QPushButton("应用代理")
+        self.set_btn = QPushButton(self.tr("应用代理"))
         self.set_btn.clicked.connect(self.set_proxy)
-        self.clear_btn = QPushButton("清除代理")
+        self.clear_btn = QPushButton(self.tr("清除代理"))
         self.clear_btn.clicked.connect(self.clear_proxy)
         btn_layout.addWidget(self.set_btn)
         btn_layout.addWidget(self.clear_btn)
@@ -87,9 +93,9 @@ class ProxyTab(QWidget):
             if proxy and proxy != ":0" and proxy != "null":
                 self.current_proxy_label.setText(proxy)
             else:
-                self.current_proxy_label.setText("未设置")
+                self.current_proxy_label.setText(self.tr("未设置"))
         except Exception:
-            self.current_proxy_label.setText("读取失败")
+            self.current_proxy_label.setText(self.tr("读取失败"))
 
     # ========== 设置与清除 (Set & Clear) ==========
 
@@ -98,35 +104,48 @@ class ProxyTab(QWidget):
         host = self.host_edit.text().strip()
         port = self.port_edit.text().strip()
         if not host or not port:
-            QMessageBox.warning(self, "输入不完整", "请填写主机和端口。")
+            QMessageBox.warning(
+                self,
+                self.tr("输入不完整"),
+                self.tr("请填写主机和端口。")
+            )
             return
         if not port.isdigit():
-            QMessageBox.warning(self, "无效端口", "端口必须是数字。")
+            QMessageBox.warning(
+                self,
+                self.tr("无效端口"),
+                self.tr("端口必须是数字。")
+            )
             return
 
         proxy_value = f"{host}:{port}"
-        self.status_label.setText("正在设置代理...")
+        self.status_label.setText(self.tr("正在设置代理..."))
         self.adb_client.shell_sync(
             f"settings put global http_proxy {proxy_value}",
             self.serial,
             timeout=3
         )
         self.load_proxy_status()
-        self.status_label.setText("代理已设置")
+        self.status_label.setText(self.tr("代理已设置"))
         QTimer.singleShot(3000, lambda: self.status_label.clear())
-        QMessageBox.information(self, "设置成功", f"代理已设置为 {proxy_value}")
+        QMessageBox.information(
+            self,
+            self.tr("设置成功"),
+            self.tr("代理已设置为 {proxy}").format(proxy=proxy_value)
+        )
 
     def clear_proxy(self):
         """清除设备全局 HTTP 代理 (Clear global HTTP proxy)"""
         reply = QMessageBox.question(
-            self, "确认",
-            "确定要清除代理设置吗？",
+            self,
+            self.tr("确认"),
+            self.tr("确定要清除代理设置吗？"),
             QMessageBox.Yes | QMessageBox.No
         )
         if reply != QMessageBox.Yes:
             return
 
-        self.status_label.setText("正在清除代理...")
+        self.status_label.setText(self.tr("正在清除代理..."))
         # 使用 :0 表示禁用代理 (Use :0 to disable proxy)
         self.adb_client.shell_sync(
             "settings put global http_proxy :0",
@@ -134,6 +153,10 @@ class ProxyTab(QWidget):
             timeout=3
         )
         self.load_proxy_status()
-        self.status_label.setText("代理已清除")
+        self.status_label.setText(self.tr("代理已清除"))
         QTimer.singleShot(3000, lambda: self.status_label.clear())
-        QMessageBox.information(self, "已清除", "代理设置已清除。")
+        QMessageBox.information(
+            self,
+            self.tr("已清除"),
+            self.tr("代理设置已清除。")
+        )

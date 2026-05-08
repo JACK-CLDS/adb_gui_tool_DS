@@ -10,7 +10,9 @@ ui/apps_tab.py - 应用管理控件 (App Management Tab)
     - 拖拽安装APK (Drag & drop APK install)
     - 后台异步加载应用图标并缓存到本地 (Async icon loading with local cache)
 
-依赖 (Dependencies): PyQt5, core.adb_client
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
 """
 
 import re
@@ -34,6 +36,7 @@ from core.adb_client import AdbClient
 class IconLoaderThread(QThread):
     """
     后台线程：从设备获取图标数据 (Background thread: fetch app icon from device)
+    注意：该类不涉及 UI 文本，无需翻译。
     """
 
     icon_ready = pyqtSignal(str, bytes)   # (package, icon_data)
@@ -66,7 +69,7 @@ class AppsTab(QWidget):
         self.current_filter = ""
         self.use_regex = False
         self.icon_queue = []           # [(package, apk_path, table, row), ...]
-        self.icon_workers = []         # 正在运行的 IconLoaderThread
+        self.icon_workers = []         # 正在运行的 IconLoaderThread (Running workers)
         self.icon_loading_active = False
 
         # 每个设备独立的缓存目录 (Per-device cache directory)
@@ -85,12 +88,14 @@ class AppsTab(QWidget):
         # ---- 搜索栏 (Search bar) ----
         search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("搜索应用名称或包名... (支持正则表达式)")
+        self.search_input.setPlaceholderText(
+            self.tr("搜索应用名称或包名... (支持正则表达式)")
+        )
         self.search_input.textChanged.connect(self.on_search_text_changed)
-        self.regex_checkbox = QPushButton("正则表达式")
+        self.regex_checkbox = QPushButton(self.tr("正则表达式"))
         self.regex_checkbox.setCheckable(True)
         self.regex_checkbox.toggled.connect(self.on_regex_toggled)
-        self.refresh_btn = QPushButton("刷新")
+        self.refresh_btn = QPushButton(self.tr("刷新"))
         self.refresh_btn.clicked.connect(self.load_apps)
 
         search_layout.addWidget(self.search_input)
@@ -102,8 +107,8 @@ class AppsTab(QWidget):
         self.tab_widget = QTabWidget()
         self.system_tab = QWidget()
         self.user_tab = QWidget()
-        self.tab_widget.addTab(self.system_tab, "系统应用")
-        self.tab_widget.addTab(self.user_tab, "用户应用")
+        self.tab_widget.addTab(self.system_tab, self.tr("系统应用"))
+        self.tab_widget.addTab(self.user_tab, self.tr("用户应用"))
         layout.addWidget(self.tab_widget)
 
         # ---- 表格 (Tables) ----
@@ -118,7 +123,11 @@ class AppsTab(QWidget):
         """创建应用表格 (Create app table widget)"""
         table = QTableWidget()
         table.setColumnCount(3)
-        table.setHorizontalHeaderLabels(["", "应用名称", "包名"])
+        table.setHorizontalHeaderLabels([
+            "",                          # 图标列无标题 (Icon column without header)
+            self.tr("应用名称"),
+            self.tr("包名")
+        ])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         table.setColumnWidth(0, 32)     # 图标列
         table.setColumnWidth(1, 200)    # 应用名称
@@ -145,8 +154,8 @@ class AppsTab(QWidget):
     def load_apps(self):
         """加载应用列表 (Load app list from device)"""
         self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setText("加载中...")
-        # 清空待加载图标队列，停止工作线程
+        self.refresh_btn.setText(self.tr("加载中..."))
+        # 清空待加载图标队列，停止工作线程 (Clear icon queue and stop workers)
         self.icon_queue.clear()
         self._stop_icon_workers()
 
@@ -169,7 +178,7 @@ class AppsTab(QWidget):
             self.system_apps = []
 
         self.refresh_btn.setEnabled(True)
-        self.refresh_btn.setText("刷新")
+        self.refresh_btn.setText(self.tr("刷新"))
         self._start_icon_loading()   # 开始异步加载图标
 
     def _parse_packages(self, output: str) -> List[Dict]:
@@ -258,7 +267,7 @@ class AppsTab(QWidget):
         if not self.icon_loading_active or not self.icon_queue:
             self.icon_loading_active = False
             return
-        max_workers = 3   # 最多同时运行3个线程
+        max_workers = 3   # 最多同时运行3个线程 (Max 3 concurrent workers)
         while len(self.icon_workers) < max_workers and self.icon_queue:
             package, apk_path, table, row = self.icon_queue.pop(0)
             worker = IconLoaderThread(self.adb_client, package, apk_path, self.serial)
@@ -314,7 +323,11 @@ class AppsTab(QWidget):
                 lower = self.current_filter.lower()
                 return [app for app in apps if lower in app["name"].lower() or lower in app["package"].lower()]
         except re.error:
-            QMessageBox.warning(self, "正则表达式错误", f"无效的正则表达式: {self.current_filter}")
+            QMessageBox.warning(
+                self,
+                self.tr("正则表达式错误"),
+                self.tr("无效的正则表达式: {pattern}").format(pattern=self.current_filter)
+            )
             return apps
 
     def on_search_text_changed(self, text: str):
@@ -345,36 +358,36 @@ class AppsTab(QWidget):
         packages = set()
         for item in selected_rows:
             row = item.row()
-            pkg_item = table.item(row, 2)   # 包名在第3列
+            pkg_item = table.item(row, 2)   # 包名在第3列 (Package column index 2)
             if pkg_item:
                 packages.add(pkg_item.text())
         if not packages:
             return
 
         menu = QMenu()
-        copy_action = QAction("复制包名", self)
+        copy_action = QAction(self.tr("复制包名"), self)
         copy_action.triggered.connect(lambda: self.copy_package_names(packages))
         menu.addAction(copy_action)
 
-        uninstall_action = QAction("卸载", self)
+        uninstall_action = QAction(self.tr("卸载"), self)
         uninstall_action.triggered.connect(lambda: self.uninstall_apps(packages))
         menu.addAction(uninstall_action)
 
-        clear_data_action = QAction("清除数据", self)
+        clear_data_action = QAction(self.tr("清除数据"), self)
         clear_data_action.triggered.connect(lambda: self.clear_app_data(packages))
         menu.addAction(clear_data_action)
 
         menu.addSeparator()
 
-        run_action = QAction("运行", self)
+        run_action = QAction(self.tr("运行"), self)
         run_action.triggered.connect(lambda: self.run_apps(packages, as_root=False))
         menu.addAction(run_action)
 
-        run_root_action = QAction("以 root 权限运行", self)
+        run_root_action = QAction(self.tr("以 root 权限运行"), self)
         run_root_action.triggered.connect(lambda: self.run_apps(packages, as_root=True))
         menu.addAction(run_root_action)
 
-        export_action = QAction("导出APK", self)
+        export_action = QAction(self.tr("导出APK"), self)
         export_action.triggered.connect(lambda: self.export_apks(packages))
         menu.addAction(export_action)
 
@@ -384,7 +397,11 @@ class AppsTab(QWidget):
         """复制包名到剪贴板 (Copy package names to clipboard)"""
         clipboard = QApplication.clipboard()
         clipboard.setText("\n".join(packages))
-        QMessageBox.information(self, "提示", f"已复制 {len(packages)} 个包名到剪贴板")
+        QMessageBox.information(
+            self,
+            self.tr("提示"),
+            self.tr("已复制 {count} 个包名到剪贴板").format(count=len(packages))
+        )
 
     # ========== 应用操作 (App Operations) ==========
 
@@ -393,43 +410,76 @@ class AppsTab(QWidget):
         if not packages:
             return
         pkg_list = "\n".join(packages)
-        reply = QMessageBox.question(self, "确认卸载", f"确定要卸载以下应用吗？\n{pkg_list}",
-                                     QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self,
+            self.tr("确认卸载"),
+            self.tr("确定要卸载以下应用吗？\n{packages}").format(packages=pkg_list),
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply == QMessageBox.Yes:
             for pkg in packages:
-                self.adb_client.uninstall(pkg, self.serial,
-                                          callback=lambda code, out, err, p=pkg: self._on_uninstall_finished(code, out, err, p))
+                self.adb_client.uninstall(
+                    pkg, self.serial,
+                    callback=lambda code, out, err, p=pkg: self._on_uninstall_finished(code, out, err, p)
+                )
 
     def _on_uninstall_finished(self, exit_code, stdout, stderr, pkg=None):
         if exit_code == 0:
-            QMessageBox.information(self, "卸载成功", f"应用 {pkg} 已卸载")
+            QMessageBox.information(
+                self,
+                self.tr("卸载成功"),
+                self.tr("应用 {package} 已卸载").format(package=pkg)
+            )
             self.load_apps()
         else:
-            QMessageBox.warning(self, "卸载失败", f"卸载 {pkg} 失败:\n{stderr}")
+            QMessageBox.warning(
+                self,
+                self.tr("卸载失败"),
+                self.tr("卸载 {package} 失败:\n{error}").format(package=pkg, error=stderr)
+            )
 
     def clear_app_data(self, packages: set):
         """清除选中应用的数据 (Clear app data)"""
         if not packages:
             return
         pkg_list = "\n".join(packages)
-        reply = QMessageBox.question(self, "确认清除数据", f"确定要清除以下应用的数据吗？\n{pkg_list}\n\n清除后应用将恢复初始状态。",
-                                     QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self,
+            self.tr("确认清除数据"),
+            self.tr("确定要清除以下应用的数据吗？\n{packages}\n\n清除后应用将恢复初始状态。").format(
+                packages=pkg_list
+            ),
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply == QMessageBox.Yes:
             for pkg in packages:
-                self.adb_client.shell(f"pm clear {pkg}", self.serial,
-                                      callback=lambda code, out, err, p=pkg: self._on_clear_finished(code, out, err, p))
+                self.adb_client.shell(
+                    f"pm clear {pkg}", self.serial,
+                    callback=lambda code, out, err, p=pkg: self._on_clear_finished(code, out, err, p)
+                )
 
     def _on_clear_finished(self, exit_code, stdout, stderr, pkg):
         if exit_code == 0 and "Success" in stdout:
-            QMessageBox.information(self, "清除成功", f"应用 {pkg} 数据已清除")
+            QMessageBox.information(
+                self,
+                self.tr("清除成功"),
+                self.tr("应用 {package} 数据已清除").format(package=pkg)
+            )
         else:
-            QMessageBox.warning(self, "清除失败", f"清除 {pkg} 数据失败:\n{stderr}")
+            QMessageBox.warning(
+                self,
+                self.tr("清除失败"),
+                self.tr("清除 {package} 数据失败:\n{error}").format(package=pkg, error=stderr)
+            )
 
     def export_apks(self, packages: set):
         """导出选中应用的APK文件 (Export APK files)"""
         if not packages:
             return
-        dir_path = QFileDialog.getExistingDirectory(self, "选择保存目录")
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            self.tr("选择保存目录")
+        )
         if not dir_path:
             return
         for pkg in packages:
@@ -438,16 +488,32 @@ class AppsTab(QWidget):
                 apk_path = out[8:].strip().split('\n')[0]
                 local_filename = f"{pkg}.apk"
                 local_path = f"{dir_path}/{local_filename}"
-                self.adb_client.pull(apk_path, local_path, self.serial,
-                                     callback=lambda code, out, err, p=pkg, l=local_path: self._on_export_finished(code, out, err, p, l))
+                self.adb_client.pull(
+                    apk_path, local_path, self.serial,
+                    callback=lambda code, out, err, p=pkg, l=local_path: self._on_export_finished(code, out, err, p, l)
+                )
             else:
-                QMessageBox.warning(self, "导出失败", f"无法获取 {pkg} 的APK路径，输出：{out}")
+                QMessageBox.warning(
+                    self,
+                    self.tr("导出失败"),
+                    self.tr("无法获取 {package} 的APK路径，输出：{output}").format(
+                        package=pkg, output=out
+                    )
+                )
 
     def _on_export_finished(self, exit_code, stdout, stderr, pkg, local_path):
         if exit_code == 0:
-            QMessageBox.information(self, "导出成功", f"{pkg} 已保存到 {local_path}")
+            QMessageBox.information(
+                self,
+                self.tr("导出成功"),
+                self.tr("{package} 已保存到 {path}").format(package=pkg, path=local_path)
+            )
         else:
-            QMessageBox.warning(self, "导出失败", f"导出 {pkg} 失败:\n{stderr}")
+            QMessageBox.warning(
+                self,
+                self.tr("导出失败"),
+                self.tr("导出 {package} 失败:\n{error}").format(package=pkg, error=stderr)
+            )
 
     def run_apps(self, packages: set, as_root: bool = False):
         """
@@ -461,19 +527,29 @@ class AppsTab(QWidget):
                 cmd = f"su -c 'am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)'"
             else:
                 cmd = f"am start -n {pkg}/$(pm resolve-activity --brief {pkg} | tail -1)"
-            self.adb_client.shell(cmd, self.serial,
-                                  callback=lambda code, out, err, p=pkg: self._on_run_finished(code, out, err, p))
+            self.adb_client.shell(
+                cmd, self.serial,
+                callback=lambda code, out, err, p=pkg: self._on_run_finished(code, out, err, p)
+            )
 
     def _on_run_finished(self, exit_code, stdout, stderr, pkg):
         if exit_code == 0:
-            QMessageBox.information(self, "启动成功", f"应用 {pkg} 已启动")
+            QMessageBox.information(
+                self,
+                self.tr("启动成功"),
+                self.tr("应用 {package} 已启动").format(package=pkg)
+            )
         else:
-            QMessageBox.warning(self, "启动失败", f"启动 {pkg} 失败:\n{stderr}")
+            QMessageBox.warning(
+                self,
+                self.tr("启动失败"),
+                self.tr("启动 {package} 失败:\n{error}").format(package=pkg, error=stderr)
+            )
 
     # ========== 拖拽安装 (Drag & Drop Install) ==========
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """拖拽进入事件：接受 .apk 文件"""
+        """拖拽进入事件：接受 .apk 文件 (Accept .apk files on drag enter)"""
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
                 if url.toLocalFile().endswith('.apk'):
@@ -482,7 +558,7 @@ class AppsTab(QWidget):
         event.ignore()
 
     def dropEvent(self, event: QDropEvent):
-        """拖拽放下事件：安装 APK"""
+        """拖拽放下事件：安装 APK (Drop event: install APKs)"""
         apk_paths = []
         for url in event.mimeData().urls():
             path = url.toLocalFile()
@@ -492,20 +568,28 @@ class AppsTab(QWidget):
             self.install_apks(apk_paths)
 
     def install_apks(self, apk_paths: List[str]):
-        """安装一个或多个 APK 文件"""
+        """安装一个或多个 APK 文件 (Install one or more APK files)"""
         if not apk_paths:
             return
-        reply = QMessageBox.question(self, "确认安装", f"确定要安装 {len(apk_paths)} 个APK吗？",
-                                     QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self,
+            self.tr("确认安装"),
+            self.tr("确定要安装 {count} 个APK吗？").format(count=len(apk_paths)),
+            QMessageBox.Yes | QMessageBox.No
+        )
         if reply != QMessageBox.Yes:
             return
 
         for apk_path in apk_paths:
             filename = os.path.basename(apk_path)
-            progress = QProgressDialog(f"正在安装 {filename}...", "取消", 0, 0, self)
+            progress = QProgressDialog(
+                self.tr("正在安装 {filename}...").format(filename=filename),
+                self.tr("取消"),
+                0, 0, self
+            )
             progress.setWindowModality(Qt.WindowModal)
             progress.setMinimumDuration(0)
-            progress.setCancelButtonText("取消")
+            progress.setCancelButtonText(self.tr("取消"))
             progress.setAutoClose(False)
             progress.setAutoReset(False)
             progress.setRange(0, 0)
@@ -516,7 +600,10 @@ class AppsTab(QWidget):
                 args.extend(['-s', self.serial])
             args.extend(['install', '-r', apk_path])
 
-            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+            process = subprocess.Popen(
+                args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1
+            )
             success = False
             error_msg = ""
             while True:
@@ -527,7 +614,11 @@ class AppsTab(QWidget):
                     process.terminate()
                     break
                 if line:
-                    progress.setLabelText(f"正在安装 {filename}\n{line.strip()}")
+                    progress.setLabelText(
+                        self.tr("正在安装 {filename}\n{status}").format(
+                            filename=filename, status=line.strip()
+                        )
+                    )
                     if "Success" in line:
                         success = True
                     elif "Failure" in line:
@@ -536,9 +627,23 @@ class AppsTab(QWidget):
             progress.close()
 
             if progress.wasCanceled():
-                QMessageBox.information(self, "取消", f"已取消安装 {filename}")
+                QMessageBox.information(
+                    self,
+                    self.tr("取消"),
+                    self.tr("已取消安装 {filename}").format(filename=filename)
+                )
             elif success:
-                QMessageBox.information(self, "安装成功", f"{filename} 安装成功")
+                QMessageBox.information(
+                    self,
+                    self.tr("安装成功"),
+                    self.tr("{filename} 安装成功").format(filename=filename)
+                )
                 self.load_apps()   # 刷新列表
             else:
-                QMessageBox.warning(self, "安装失败", f"{filename} 安装失败\n{error_msg}")
+                QMessageBox.warning(
+                    self,
+                    self.tr("安装失败"),
+                    self.tr("{filename} 安装失败\n{error}").format(
+                        filename=filename, error=error_msg
+                    )
+                )

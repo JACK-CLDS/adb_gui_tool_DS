@@ -9,6 +9,10 @@ ui/logcat_tab.py - 日志查看控件 (Logcat Viewer)
     - 清空和保存日志 (Clear & Save log)
     - 语法高亮器 (Syntax highlighter for log levels)
 
+多语言 (i18n):
+    所有用户可见字符串均已使用 self.tr() 包裹，可通过翻译文件切换语言。
+    All user-visible strings are wrapped with self.tr() for translation.
+
 依赖 (Dependencies): PyQt5, core.adb_client
 """
 
@@ -29,6 +33,7 @@ class LogcatHighlighter(QSyntaxHighlighter):
     Logcat 语法高亮器 (Syntax highlighter for logcat)
     - 按日志级别着色
     - 支持搜索词高亮
+    该类不涉及用户可见文本，无需翻译。
     """
 
     def __init__(self, parent=None):
@@ -95,7 +100,7 @@ class LogcatTab(QWidget):
         self.adb_client = adb_client
         self.process = None
         self.paused = False
-        self.level_filters = ['V', 'D', 'I', 'W', 'E', 'F']   # 默认显示所有级别
+        self.level_filters = ['V', 'D', 'I', 'W', 'E', 'F']   # 默认显示所有级别 (Show all levels by default)
 
         self.init_ui()
         self.start_logcat()
@@ -109,30 +114,35 @@ class LogcatTab(QWidget):
         # ---- 控制栏 (Control bar) ----
         control_layout = QHBoxLayout()
 
-        control_layout.addWidget(QLabel("级别:"))
+        control_layout.addWidget(QLabel(self.tr("级别:")))
         self.level_combo = QComboBox()
         self.level_combo.addItems([
-            "All", "Verbose (V)", "Debug (D)", "Info (I)",
-            "Warning (W)", "Error (E)", "Fatal (F)"
+            self.tr("全部"),
+            self.tr("详细 (V)"),
+            self.tr("调试 (D)"),
+            self.tr("信息 (I)"),
+            self.tr("警告 (W)"),
+            self.tr("错误 (E)"),
+            self.tr("致命 (F)")
         ])
         self.level_combo.currentIndexChanged.connect(self.on_level_changed)
         control_layout.addWidget(self.level_combo)
 
-        control_layout.addWidget(QLabel("搜索:"))
+        control_layout.addWidget(QLabel(self.tr("搜索:")))
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("高亮文本")
+        self.search_input.setPlaceholderText(self.tr("高亮文本"))
         self.search_input.textChanged.connect(self.highlight_search)
         control_layout.addWidget(self.search_input)
 
-        self.pause_btn = QPushButton("暂停")
+        self.pause_btn = QPushButton(self.tr("暂停"))
         self.pause_btn.clicked.connect(self.toggle_pause)
         control_layout.addWidget(self.pause_btn)
 
-        self.clear_btn = QPushButton("清空")
+        self.clear_btn = QPushButton(self.tr("清空"))
         self.clear_btn.clicked.connect(self.clear_log)
         control_layout.addWidget(self.clear_btn)
 
-        self.save_btn = QPushButton("保存")
+        self.save_btn = QPushButton(self.tr("保存"))
         self.save_btn.clicked.connect(self.save_log)
         control_layout.addWidget(self.save_btn)
 
@@ -214,7 +224,7 @@ class LogcatTab(QWidget):
     def toggle_pause(self):
         """暂停/恢复滚动 (Toggle pause/resume scrolling)"""
         self.paused = not self.paused
-        self.pause_btn.setText("恢复" if self.paused else "暂停")
+        self.pause_btn.setText(self.tr("恢复") if self.paused else self.tr("暂停"))
 
     def clear_log(self):
         """清空日志 (Clear log)"""
@@ -223,12 +233,19 @@ class LogcatTab(QWidget):
     def save_log(self):
         """保存日志到文件 (Save log to file)"""
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存日志", "logcat.txt", "文本文件 (*.txt)"
+            self,
+            self.tr("保存日志"),
+            "logcat.txt",
+            self.tr("文本文件 (*.txt)")
         )
         if file_path:
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(self.log_text.toPlainText())
-            QMessageBox.information(self, "保存成功", f"日志已保存到 {file_path}")
+            QMessageBox.information(
+                self,
+                self.tr("保存成功"),
+                self.tr("日志已保存到 {file_path}").format(file_path=file_path)
+            )
 
     # ========== 搜索高亮 (Search Highlight) ==========
 
