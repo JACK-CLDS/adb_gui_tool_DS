@@ -2,6 +2,8 @@
 
 A powerful (?) GUI ADB tool written in Python + PyQt5.
 
+Key features: Supports full keyboard definition (including keys F13 to F24).
+
 > [!NOTE]
 > 🌐 Currently only Chinese is available.
 
